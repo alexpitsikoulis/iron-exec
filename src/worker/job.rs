@@ -1,8 +1,8 @@
 use uuid::Uuid;
 
 pub struct Job {
-    id: Uuid,
-    cmd: std::process::Command,
+    _id: Uuid,
+    _cmd: std::process::Command,
     status: Status,
     owner_id: Uuid,
 }
@@ -10,8 +10,8 @@ pub struct Job {
 impl Job {
     pub fn new(id: Uuid, cmd: std::process::Command, state: ProcessState, owner_id: Uuid) -> Self {
         Job {
-            id,
-            cmd,
+            _id: id,
+            _cmd: cmd,
             status: Status {
                 pid: -1,
                 exit_code: 0,

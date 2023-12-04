@@ -7,7 +7,7 @@ use nix::{
     sys::wait::waitpid,
     unistd::{execv, fork, getpid, ForkResult},
 };
-use std::{ffi::CString, fs::File, path::Path, sync::Arc};
+use std::{ffi::CString, fs::File, sync::Arc};
 use uuid::Uuid;
 
 use self::{cgroup::CgroupConfig, job::ProcessState};
@@ -35,14 +35,14 @@ pub trait ProcessRunner {
 }
 
 pub struct Worker {
-    logger: &'static dyn Log,
+    _logger: &'static dyn Log,
     jobs: Vec<Arc<Job>>,
 }
 
 impl Worker {
     pub fn new(logger: &'static dyn Log) -> Self {
         Worker {
-            logger,
+            _logger: logger,
             jobs: Vec::new(),
         }
     }
@@ -97,20 +97,16 @@ impl ProcessRunner for Worker {
                                             status.set_pid(pid.as_raw());
                                             Ok(job)
                                         }
-                                        Err(e) => {
-                                            return Err(Error::JobStartErr(format!(
-                                                "failed to execute child process: {:?}",
-                                                e
-                                            )))
-                                        }
+                                        Err(e) => Err(Error::JobStartErr(format!(
+                                            "failed to execute child process: {:?}",
+                                            e
+                                        ))),
                                     }
                                 }
-                                Err(e) => {
-                                    return Err(Error::JobStartErr(format!(
-                                        "failed to create cgroup: {:?}",
-                                        e
-                                    )))
-                                }
+                                Err(e) => Err(Error::JobStartErr(format!(
+                                    "failed to create cgroup: {:?}",
+                                    e
+                                ))),
                             }
                         }
                         Err(e) => Err(Error::JobStartErr(format!(
@@ -129,18 +125,18 @@ impl ProcessRunner for Worker {
         }
     }
 
-    fn stop(&mut self, job_id: &'static str) -> Result<(), Error> {
+    fn stop(&mut self, _job_id: &'static str) -> Result<(), Error> {
         todo!()
     }
 
-    fn query(&self, job_id: &'static str) -> Result<Status, Error> {
+    fn query(&self, _job_id: &'static str) -> Result<Status, Error> {
         todo!()
     }
 
     fn stream(
         &self,
-        ctx: std::task::Context,
-        process_id: &'static str,
+        _ctx: std::task::Context,
+        _process_id: &'static str,
     ) -> Result<std::io::BufReader<File>, Error> {
         todo!()
     }
