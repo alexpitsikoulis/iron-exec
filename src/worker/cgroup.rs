@@ -54,7 +54,7 @@ pub fn create_cgroup(
     Ok(root_cgroup_path.to_owned())
 }
 
-pub fn add_to_cgroup(pid: i32, cgroup_path: PathBuf) -> Result<(), std::io::Error> {
+pub fn add_to_cgroup(pid: u32, cgroup_path: PathBuf) -> Result<(), std::io::Error> {
     let mut tasks_file = OpenOptions::new()
         .write(true)
         .open(cgroup_path.join("tasks"))
