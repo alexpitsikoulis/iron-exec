@@ -13,10 +13,13 @@ use std::{
     thread,
 };
 
+use std::thread::JoinHandle;
+
+#[derive(Debug)]
 pub struct PipeLogger {}
 
 impl PipeLogger {
-    pub fn start(log_filename: impl ToString, proc: &mut Child) {
+    pub fn new(log_filename: impl ToString, proc: &mut Child) -> (JoinHandle<()>, JoinHandle<()>) {
         let stdout = BufReader::new(proc.stdout.take().unwrap());
         let stderr = BufReader::new(proc.stderr.take().unwrap());
         let log_file = Arc::new(Mutex::new(
@@ -24,7 +27,7 @@ impl PipeLogger {
         ));
 
         let file_clone = log_file.clone();
-        let stdout_thread = thread::spawn(move || {
+        let stdout_handle = thread::spawn(move || {
             for line in stdout.lines() {
                 let line = line.unwrap();
                 let mut file = file_clone.lock().unwrap();
@@ -32,7 +35,7 @@ impl PipeLogger {
             }
         });
 
-        let stderr_thread = thread::spawn(move || {
+        let stderr_handle = thread::spawn(move || {
             for line in stderr.lines() {
                 let line = line.unwrap();
                 let mut file = log_file.lock().unwrap();
@@ -40,28 +43,10 @@ impl PipeLogger {
             }
         });
 
-        stdout_thread.join().unwrap();
-        stderr_thread.join().unwrap();
-
-        proc.wait().unwrap();
+        return(stdout_handle, stderr_handle)
     }
-
-    // pub async fn start(&mut self) -> Result<(), std::io::Error> {
-
-    // let receiver = self.receiver.clone();
-    // tokio::spawn(async {
-    //     loop {
-    //         receiver.recv();
-    //     }
-    // });
-    // Ok(())
-    // }
-
-    // pub async fn listen(&mut self) -> Result<(), std::io::Error> {
-    //     let x = tokio::task::spawn(async {
-
-    //     });
-    //     std::io::BufWriter::new(inner)
-    //     x.await
-    // }
+    
+    pub async fn close(self) {
+        
+    }
 }
