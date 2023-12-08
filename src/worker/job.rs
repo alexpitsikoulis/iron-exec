@@ -1,35 +1,38 @@
 use std::{
-    ops::DerefMut,
+    fs::File,
+    io::{BufRead, BufReader, Write},
     process::Child,
-    sync::{Arc, Mutex}, thread::JoinHandle,
+    sync::{Arc, Mutex},
+    thread::{self, JoinHandle},
 };
 use uuid::Uuid;
-
-use super::pipe_logger::PipeLogger;
 
 #[derive(Debug)]
 pub struct Job {
     id: Uuid,
     cmd: Command,
-    proc: Option<Arc<Mutex<Child>>>,
-    status: Status,
+    status: Arc<Mutex<Status>>,
     owner_id: Uuid,
-    logger: Option<PipeLogger>,
+    stdout_handle: JoinHandle<()>,
+    stderr_handle: JoinHandle<()>,
 }
 
 impl Job {
-    pub fn new(id: Uuid, cmd: Command, state: ProcessState, owner_id: Uuid) -> Self {
+    pub fn new(
+        id: Uuid,
+        cmd: Command,
+        status: Arc<Mutex<Status>>,
+        owner_id: Uuid,
+        stdout_handle: JoinHandle<()>,
+        stderr_handle: JoinHandle<()>,
+    ) -> Self {
         Job {
             id,
             cmd,
-            proc: None,
-            status: Status {
-                pid: 0,
-                exit_code: 0,
-                state,
-            },
+            status,
             owner_id,
-            logger: None,
+            stdout_handle,
+            stderr_handle,
         }
     }
 
@@ -37,45 +40,76 @@ impl Job {
         self.id
     }
 
-    pub fn proc(&self) -> &Arc<Mutex<Child>> {
-        self.proc.as_ref().expect("child process has detached from job")
-    }
-
-    pub fn proc_lock(
-        &self,
-    ) -> Result<
-        std::sync::MutexGuard<'_, Child>,
-        std::sync::PoisonError<std::sync::MutexGuard<'_, Child>>,
-    > {
-        self.proc().lock()
-    }
-
-    pub fn status(&self) -> &Status {
-        &self.status
-    }
-
-    pub fn status_mut(&mut self) -> &mut Status {
-        &mut self.status
+    pub fn status(&self) -> Arc<Mutex<Status>> {
+        self.status.clone()
     }
 
     pub fn owner_id(&self) -> Uuid {
         self.owner_id
     }
 
-    pub fn set_proc(&mut self, proc: Arc<Mutex<Child>>) -> (JoinHandle<()>, JoinHandle<()>) {
-        let proc_clone = proc.clone();
-        let mut proc_lock = proc_clone.lock().unwrap();
-        let logger = PipeLogger::new(
-            format!("{}_{}.log", self.cmd.name(), self.id),
-            &mut proc_lock,
-        );
-        drop(proc_lock);
-        self.proc = Some(proc.clone());
-        logger
+    pub fn update_pid(&mut self, pid: u32) {
+        let mut status = self.status.lock().unwrap();
+        status.pid = pid;
     }
 
-    pub fn set_status(&mut self, status: Status) {
-        self.status = status;
+    pub fn update_exit_code(&mut self, exit_code: i32) {
+        let mut status = self.status.lock().unwrap();
+        status.exit_code = exit_code;
+    }
+
+    pub fn update_state(&mut self, state: ProcessState) {
+        let mut status = self.status.lock().unwrap();
+        status.state = state;
+    }
+
+    pub fn start_logger(
+        log_filename: impl ToString,
+        proc: Arc<Mutex<Child>>,
+    ) -> (JoinHandle<()>, JoinHandle<()>) {
+        let mut proc = proc.lock().unwrap();
+        let stdout = BufReader::new(proc.stdout.take().unwrap());
+        let stderr = BufReader::new(proc.stderr.take().unwrap());
+        drop(proc);
+        let log_file = Arc::new(Mutex::new(
+            File::create(format!("./{}", log_filename.to_string())).unwrap(),
+        ));
+
+        let file_clone = log_file.clone();
+        let stdout_handle = thread::spawn(move || {
+            for line in stdout.lines() {
+                let line = line.unwrap();
+                let mut file = file_clone.lock().unwrap();
+                writeln!(file, "stdout: {}", line).unwrap();
+            }
+        });
+
+        let stderr_handle = thread::spawn(move || {
+            for line in stderr.lines() {
+                let line = line.unwrap();
+                let mut file = log_file.lock().unwrap();
+                writeln!(file, "stderr: {}", line).unwrap();
+            }
+        });
+
+        (stdout_handle, stderr_handle)
+    }
+
+    pub fn close_logger(self) {
+        self.stdout_handle.join().unwrap();
+        self.stderr_handle.join().unwrap();
+    }
+
+    pub fn wait(self, status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
+        self.close_logger();
+        let mut status = status.lock().unwrap();
+        let proc_lock = Arc::try_unwrap(proc).unwrap();
+        let inner = proc_lock.into_inner().unwrap();
+        let pid = inner.id();
+        status.set_pid(pid);
+        let output = inner.wait_with_output().unwrap();
+        status.set_state(ProcessState::Exited);
+        status.set_exit_code(output.status.code().unwrap());
     }
 }
 
@@ -106,7 +140,7 @@ pub enum ProcessState {
     Exited,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Status {
     pid: u32,
     exit_code: i32,
