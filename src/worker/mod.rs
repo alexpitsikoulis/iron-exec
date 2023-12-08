@@ -1,8 +1,4 @@
-mod cgroup;
-mod job;
 mod tests;
-use cgroup::{add_to_cgroup, create_cgroup};
-use job::{Command, Job, Status};
 use nix::{
     sys::wait::waitpid,
     unistd::{execv, fork, getpid, ForkResult},
@@ -10,12 +6,15 @@ use nix::{
 use std::{
     ffi::CString,
     fs::File,
-    process::Stdio,
+    process::{Stdio, Child},
     sync::{Arc, Mutex},
 };
 use uuid::Uuid;
+use crate::{
+    pipe_logger::PipeLogger,
+    job::{ Job, Command, Status, ProcessState, CgroupConfig, create_cgroup, add_to_cgroup},
+};
 
-use self::{cgroup::CgroupConfig, job::ProcessState};
 
 #[derive(Clone, Debug)]
 pub enum Error {
@@ -44,7 +43,7 @@ impl Worker {
         let mut cmd = std::process::Command::new(command.name());
         let cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let child_proc = Arc::new(Mutex::new(cmd.args(command.args()).spawn().unwrap()));
-        let logger = Job::start_logger(
+        let logger = PipeLogger::new(
             format!("{}_{}.log", command.name(), job_id),
             child_proc.clone(),
         );
@@ -64,7 +63,7 @@ impl Worker {
                                 .expect("failed to kill process after waitpid failed");
                             panic!("waitpid failed: {:?}", e);
                         }
-                        job.wait(status, child_proc, logger);
+                        wait(status, child_proc, logger);
                         Ok(())
                     }
                     Ok(ForkResult::Child) => match create_cgroup(command.name(), job_id, config) {
@@ -82,7 +81,7 @@ impl Worker {
                             }
                             match execv(&cmd, &args) {
                                 Ok(_) => {
-                                    job.wait(status, child_proc, logger);
+                                    wait(status, child_proc, logger);
                                     Ok(())
                                 }
                                 Err(e) => Err(Error::JobStartErr(format!(
@@ -102,7 +101,7 @@ impl Worker {
                     ))),
                 },
                 None => {
-                    job.wait(status, child_proc, logger);
+                    wait(status, child_proc, logger);
                     Ok(())
                 }
             }
@@ -121,4 +120,16 @@ impl Worker {
     ) -> Result<std::io::BufReader<File>, Error> {
         todo!()
     }
+}
+
+fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>, logger: PipeLogger) {
+    logger.close();
+        let mut status = status.lock().unwrap();
+        let proc_lock = Arc::try_unwrap(proc).unwrap();
+        let inner = proc_lock.into_inner().unwrap();
+        let pid = inner.id();
+        status.set_pid(pid);
+        let output = inner.wait_with_output().unwrap();
+        status.set_state(ProcessState::Exited);
+        status.set_exit_code(output.status.code().unwrap());
 }

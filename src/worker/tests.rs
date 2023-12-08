@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::worker::{
+    use crate::{
+        worker::Worker,
         job::{Command, ProcessState},
-        Worker,
     };
     use claim::assert_ok;
 
