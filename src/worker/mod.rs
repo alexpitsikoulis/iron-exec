@@ -25,16 +25,9 @@ pub enum Error {
     JobStreamErr(String),
 }
 
-#[derive(Clone, Debug)]
-pub struct WorkerJob {
-    id: Uuid,
-    status: Arc<Mutex<Status>>,
-    owner_id: Uuid,
-}
-
 #[derive(Clone)]
 pub struct Worker {
-    pub jobs: Vec<Box<WorkerJob>>,
+    pub jobs: Vec<Box<Job>>,
 }
 
 impl Worker {
@@ -48,27 +41,16 @@ impl Worker {
         cgroup_config: Option<CgroupConfig>,
     ) -> (Uuid, tokio::task::JoinHandle<Result<(), Error>>) {
         let job_id = Uuid::new_v4();
-        let status = Arc::new(Mutex::new(Status::new(0, 0, ProcessState::UnknownState)));
         let mut cmd = std::process::Command::new(command.name());
         let cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let child_proc = Arc::new(Mutex::new(cmd.args(command.args()).spawn().unwrap()));
-        let (stdout_handle, stderr_handle) = Job::start_logger(
+        let logger = Job::start_logger(
             format!("{}_{}.log", command.name(), job_id),
             child_proc.clone(),
         );
-        let mut job = Job::new(
-            job_id,
-            command,
-            status.clone(),
-            Uuid::new_v4(),
-            stdout_handle,
-            stderr_handle,
-        );
-        self.jobs.push(Box::new(WorkerJob {
-            id: job.id(),
-            status: job.status(),
-            owner_id: job.owner_id(),
-        }));
+        let status = Arc::new(Mutex::new(Status::new(child_proc.lock().unwrap().id(), 0, ProcessState::UnknownState)));
+        let mut job = Box::new(Job::new(job_id, command, status.clone(), Uuid::new_v4()));
+        self.jobs.push(job.clone());
         let job_thread = tokio::spawn(async move {
             job.update_state(ProcessState::Running);
             match cgroup_config {
@@ -82,7 +64,7 @@ impl Worker {
                                 .expect("failed to kill process after waitpid failed");
                             panic!("waitpid failed: {:?}", e);
                         }
-                        job.wait(status, child_proc);
+                        job.wait(status, child_proc, logger);
                         Ok(())
                     }
                     Ok(ForkResult::Child) => match create_cgroup(command.name(), job_id, config) {
@@ -100,7 +82,7 @@ impl Worker {
                             }
                             match execv(&cmd, &args) {
                                 Ok(_) => {
-                                    job.wait(status, child_proc);
+                                    job.wait(status, child_proc, logger);
                                     Ok(())
                                 }
                                 Err(e) => Err(Error::JobStartErr(format!(
@@ -120,7 +102,7 @@ impl Worker {
                     ))),
                 },
                 None => {
-                    job.wait(status, child_proc);
+                    job.wait(status, child_proc, logger);
                     Ok(())
                 }
             }

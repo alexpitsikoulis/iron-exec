@@ -7,37 +7,30 @@ use std::{
 };
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Job {
     id: Uuid,
     cmd: Command,
     status: Arc<Mutex<Status>>,
     owner_id: Uuid,
-    stdout_handle: JoinHandle<()>,
-    stderr_handle: JoinHandle<()>,
 }
 
 impl Job {
-    pub fn new(
-        id: Uuid,
-        cmd: Command,
-        status: Arc<Mutex<Status>>,
-        owner_id: Uuid,
-        stdout_handle: JoinHandle<()>,
-        stderr_handle: JoinHandle<()>,
-    ) -> Self {
+    pub fn new(id: Uuid, cmd: Command, status: Arc<Mutex<Status>>, owner_id: Uuid) -> Self {
         Job {
             id,
             cmd,
             status,
             owner_id,
-            stdout_handle,
-            stderr_handle,
         }
     }
 
     pub fn id(&self) -> Uuid {
         self.id
+    }
+
+    pub fn cmd(&self) -> Command {
+        self.cmd
     }
 
     pub fn status(&self) -> Arc<Mutex<Status>> {
@@ -46,16 +39,6 @@ impl Job {
 
     pub fn owner_id(&self) -> Uuid {
         self.owner_id
-    }
-
-    pub fn update_pid(&mut self, pid: u32) {
-        let mut status = self.status.lock().unwrap();
-        status.pid = pid;
-    }
-
-    pub fn update_exit_code(&mut self, exit_code: i32) {
-        let mut status = self.status.lock().unwrap();
-        status.exit_code = exit_code;
     }
 
     pub fn update_state(&mut self, state: ProcessState) {
@@ -95,13 +78,18 @@ impl Job {
         (stdout_handle, stderr_handle)
     }
 
-    pub fn close_logger(self) {
-        self.stdout_handle.join().unwrap();
-        self.stderr_handle.join().unwrap();
+    pub fn close_logger(logger: (JoinHandle<()>, JoinHandle<()>)) {
+        logger.0.join().unwrap();
+        logger.1.join().unwrap();
     }
 
-    pub fn wait(self, status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
-        self.close_logger();
+    pub fn wait(
+        self,
+        status: Arc<Mutex<Status>>,
+        proc: Arc<Mutex<Child>>,
+        logger: (JoinHandle<()>, JoinHandle<()>),
+    ) {
+        Self::close_logger(logger);
         let mut status = status.lock().unwrap();
         let proc_lock = Arc::try_unwrap(proc).unwrap();
         let inner = proc_lock.into_inner().unwrap();
