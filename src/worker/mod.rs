@@ -51,11 +51,10 @@ impl Worker {
         let status = Arc::new(Mutex::new(Status::new(0, 0, ProcessState::UnknownState)));
         let mut cmd = std::process::Command::new(command.name());
         let cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-        let child_proc = cmd.args(command.args()).spawn().unwrap();
-        let child_mtx = Arc::new(Mutex::new(child_proc));
+        let child_proc = Arc::new(Mutex::new(cmd.args(command.args()).spawn().unwrap()));
         let (stdout_handle, stderr_handle) = Job::start_logger(
             format!("{}_{}.log", command.name(), job_id),
-            child_mtx.clone(),
+            child_proc.clone(),
         );
         let mut job = Job::new(
             job_id,
@@ -76,21 +75,21 @@ impl Worker {
                 Some(config) => match unsafe { fork() } {
                     Ok(ForkResult::Parent { child, .. }) => {
                         if let Err(e) = waitpid(child, None) {
-                            child_mtx
+                            child_proc
                                 .lock()
                                 .unwrap()
                                 .kill()
                                 .expect("failed to kill process after waitpid failed");
                             panic!("waitpid failed: {:?}", e);
                         }
-                        job.wait(status, child_mtx);
+                        job.wait(status, child_proc);
                         Ok(())
                     }
                     Ok(ForkResult::Child) => match create_cgroup(command.name(), job_id, config) {
                         Ok(cgroup_path) => {
                             let pid = getpid().as_raw() as u32;
                             if let Err(e) = add_to_cgroup(pid, cgroup_path) {
-                                child_mtx.lock().unwrap().kill().expect("failed to kill process after it failed to be added to the cgroup");
+                                child_proc.lock().unwrap().kill().expect("failed to kill process after it failed to be added to the cgroup");
                                 panic!("add_to_cgroup failed: {:?}", e);
                             }
 
@@ -101,7 +100,7 @@ impl Worker {
                             }
                             match execv(&cmd, &args) {
                                 Ok(_) => {
-                                    job.wait(status, child_mtx);
+                                    job.wait(status, child_proc);
                                     Ok(())
                                 }
                                 Err(e) => Err(Error::JobStartErr(format!(
@@ -121,7 +120,7 @@ impl Worker {
                     ))),
                 },
                 None => {
-                    job.wait(status, child_mtx);
+                    job.wait(status, child_proc);
                     Ok(())
                 }
             }
