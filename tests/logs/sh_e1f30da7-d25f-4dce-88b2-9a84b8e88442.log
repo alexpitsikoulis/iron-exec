@@ -1,5 +1,0 @@
-testing
-one more
-stderr test
-back to stdout
-./tests/scripts/echo_and_error.sh: 5: SET: not found
