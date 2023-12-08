@@ -1,20 +1,19 @@
-mod tests;
+use crate::{
+    config::Config,
+    job::{add_to_cgroup, create_cgroup, CgroupConfig, Command, Job, ProcessState, Status},
+};
 use nix::{
     sys::wait::waitpid,
-    unistd::{execv, fork, getpid, ForkResult},
+    unistd::{execv, fork, getpid, pipe, ForkResult},
 };
 use std::{
     ffi::CString,
     fs::File,
-    process::{Stdio, Child},
+    os::fd::{AsRawFd, FromRawFd},
+    process::{Child, Stdio},
     sync::{Arc, Mutex},
 };
 use uuid::Uuid;
-use crate::{
-    pipe_logger::PipeLogger,
-    job::{ Job, Command, Status, ProcessState, CgroupConfig, create_cgroup, add_to_cgroup},
-};
-
 
 #[derive(Clone, Debug)]
 pub enum Error {
@@ -26,12 +25,17 @@ pub enum Error {
 
 #[derive(Clone)]
 pub struct Worker {
+    cfg: Config,
     pub jobs: Vec<Box<Job>>,
 }
 
 impl Worker {
-    pub fn new() -> Self {
-        Worker { jobs: vec![] }
+    pub fn new(cfg: Config) -> Self {
+        Worker { cfg, jobs: vec![] }
+    }
+
+    pub fn default() -> Self {
+        Self::new(Config::default())
     }
 
     pub fn start(
@@ -41,13 +45,26 @@ impl Worker {
     ) -> (Uuid, tokio::task::JoinHandle<Result<(), Error>>) {
         let job_id = Uuid::new_v4();
         let mut cmd = std::process::Command::new(command.name());
-        let cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let log_file = File::create(format!(
+            "{}/{}",
+            self.cfg.log_dir,
+            format!("{}_{}.log", command.name(), job_id).to_string()
+        ))
+        .unwrap();
+        unsafe {
+            let mut unified = Stdio::from_raw_fd(log_file.as_raw_fd());
+            cmd = cmd.stdout(unified);
+            unified = Stdio::from_raw_fd(log_file.as_raw_fd());
+            cmd = cmd.stderr(unified);
+        }
         let child_proc = Arc::new(Mutex::new(cmd.args(command.args()).spawn().unwrap()));
-        let logger = PipeLogger::new(
-            format!("{}_{}.log", command.name(), job_id),
-            child_proc.clone(),
-        );
-        let status = Arc::new(Mutex::new(Status::new(child_proc.lock().unwrap().id(), 0, ProcessState::UnknownState)));
+
+        let status = Arc::new(Mutex::new(Status::new(
+            child_proc.lock().unwrap().id(),
+            0,
+            ProcessState::UnknownState,
+        )));
         let mut job = Box::new(Job::new(job_id, command, status.clone(), Uuid::new_v4()));
         self.jobs.push(job.clone());
         let job_thread = tokio::spawn(async move {
@@ -63,7 +80,7 @@ impl Worker {
                                 .expect("failed to kill process after waitpid failed");
                             panic!("waitpid failed: {:?}", e);
                         }
-                        wait(status, child_proc, logger);
+                        wait(status, child_proc);
                         Ok(())
                     }
                     Ok(ForkResult::Child) => match create_cgroup(command.name(), job_id, config) {
@@ -80,8 +97,8 @@ impl Worker {
                                 args.push(CString::new(*arg).unwrap())
                             }
                             match execv(&cmd, &args) {
-                                Ok(_) => {
-                                    wait(status, child_proc, logger);
+                                Ok(_) => {;
+                                    wait(status, child_proc);
                                     Ok(())
                                 }
                                 Err(e) => Err(Error::JobStartErr(format!(
@@ -101,7 +118,7 @@ impl Worker {
                     ))),
                 },
                 None => {
-                    wait(status, child_proc, logger);
+                    wait(status, child_proc);
                     Ok(())
                 }
             }
@@ -122,14 +139,13 @@ impl Worker {
     }
 }
 
-fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>, logger: PipeLogger) {
-    logger.close();
-        let mut status = status.lock().unwrap();
-        let proc_lock = Arc::try_unwrap(proc).unwrap();
-        let inner = proc_lock.into_inner().unwrap();
-        let pid = inner.id();
-        status.set_pid(pid);
-        let output = inner.wait_with_output().unwrap();
-        status.set_state(ProcessState::Exited);
-        status.set_exit_code(output.status.code().unwrap());
+fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
+    let mut status = status.lock().unwrap();
+    let proc_lock = Arc::try_unwrap(proc).unwrap();
+    let inner = proc_lock.into_inner().unwrap();
+    let pid = inner.id();
+    status.set_pid(pid);
+    let output = inner.wait_with_output().unwrap();
+    status.set_state(ProcessState::Exited);
+    status.set_exit_code(output.status.code().unwrap());
 }
