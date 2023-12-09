@@ -4,7 +4,7 @@ use crate::{
 };
 use nix::{
     sys::wait::waitpid,
-    unistd::{execv, fork, getpid, pipe, ForkResult},
+    unistd::{execv, fork, getpid, ForkResult},
 };
 use std::{
     ffi::CString,
@@ -31,11 +31,9 @@ pub struct Worker {
 
 impl Worker {
     pub fn new(cfg: Config) -> Self {
-        Worker { cfg, jobs: vec![] }
-    }
-
-    pub fn default() -> Self {
-        Self::new(Config::default())
+        let worker = Worker { cfg, jobs: vec![] };
+        worker.create_log_dir().unwrap();
+        worker
     }
 
     pub fn start(
@@ -47,16 +45,16 @@ impl Worker {
         let mut cmd = std::process::Command::new(command.name());
         let mut cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let log_file = File::create(format!(
-            "{}/{}",
+            "{}/{}_{}.log",
             self.cfg.log_dir,
-            format!("{}_{}.log", command.name(), job_id).to_string()
+            command.name(),
+            job_id,
         ))
         .unwrap();
         unsafe {
-            let mut unified = Stdio::from_raw_fd(log_file.as_raw_fd());
-            cmd = cmd.stdout(unified);
-            unified = Stdio::from_raw_fd(log_file.as_raw_fd());
-            cmd = cmd.stderr(unified);
+            cmd = cmd
+                .stdout(Stdio::from_raw_fd(log_file.as_raw_fd()))
+                .stderr(Stdio::from_raw_fd(log_file.as_raw_fd()));
         }
         let child_proc = Arc::new(Mutex::new(cmd.args(command.args()).spawn().unwrap()));
 
@@ -97,7 +95,7 @@ impl Worker {
                                 args.push(CString::new(*arg).unwrap())
                             }
                             match execv(&cmd, &args) {
-                                Ok(_) => {;
+                                Ok(_) => {
                                     wait(status, child_proc);
                                     Ok(())
                                 }
@@ -126,7 +124,11 @@ impl Worker {
         (job_id, job_thread)
     }
 
-    pub fn query(&self, job_id: Uuid) -> Result<Status, Error> {
+    pub fn stop(&mut self, _job_id: Uuid) -> Result<(), Error> {
+        todo!();
+    }
+
+    pub fn query(&self, _job_id: Uuid) -> Result<Status, Error> {
         todo!()
     }
 
@@ -136,6 +138,16 @@ impl Worker {
         _process_id: Uuid,
     ) -> Result<std::io::BufReader<File>, Error> {
         todo!()
+    }
+
+    fn create_log_dir(&self) -> Result<(), Error> {
+        let log_dir_path = self.cfg.log_dir;
+        if std::fs::read_dir(log_dir_path).is_err() {
+            std::fs::create_dir_all(log_dir_path)
+                .map_err(|e| Error::JobStartErr(format!("failed to create log directory: {:?}", e)))
+        } else {
+            Ok(())
+        }
     }
 }
 
