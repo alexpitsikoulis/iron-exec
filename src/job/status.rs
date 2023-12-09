@@ -1,46 +1,29 @@
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ProcessState {
+pub enum Status {
     UnknownState,
     Running,
-    Exited,
+    Exited(Option<i32>),
+    Stopped(StopType),
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Status {
-    pid: u32,
-    exit_code: i32,
-    state: ProcessState,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StopType {
+    Stop,
+    Kill,
 }
 
-impl Status {
-    pub fn new(pid: u32, exit_code: i32, state: ProcessState) -> Self {
-        Status {
-            pid,
-            exit_code,
-            state,
+impl StopType {
+    pub fn flag(&self) -> &str {
+        match self {
+            Self::Stop => "-STOP",
+            Self::Kill => "-9",
         }
     }
-    pub fn pid(&self) -> u32 {
-        self.pid
-    }
 
-    pub fn exit_code(&self) -> i32 {
-        self.exit_code
-    }
-
-    pub fn state(&self) -> ProcessState {
-        self.state
-    }
-
-    pub fn set_pid(&mut self, pid: u32) {
-        self.pid = pid;
-    }
-
-    pub fn set_exit_code(&mut self, exit_code: i32) {
-        self.exit_code = exit_code;
-    }
-
-    pub fn set_state(&mut self, state: ProcessState) {
-        self.state = state;
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Stop => "stop",
+            Self::Kill => "kill",
+        }
     }
 }

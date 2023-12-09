@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    job::{add_to_cgroup, create_cgroup, CgroupConfig, Command, Job, ProcessState, Status},
+    job::{add_to_cgroup, create_cgroup, CgroupConfig, Command, Job, Status, StopType},
 };
 use nix::{
     sys::wait::waitpid,
@@ -12,6 +12,7 @@ use std::{
     os::fd::{AsRawFd, FromRawFd},
     process::{Child, Stdio},
     sync::{Arc, Mutex},
+    thread::{self, JoinHandle},
 };
 use uuid::Uuid;
 
@@ -40,10 +41,10 @@ impl Worker {
         &mut self,
         command: Command,
         cgroup_config: Option<CgroupConfig>,
-    ) -> (Uuid, tokio::task::JoinHandle<Result<(), Error>>) {
+        owner_id: Uuid,
+    ) -> (Box<Job>, JoinHandle<Result<(), Error>>) {
         let job_id = Uuid::new_v4();
-        let mut cmd = std::process::Command::new(command.name());
-        let mut cmd = cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut cmd = &mut std::process::Command::new(command.name());
         let log_file = File::create(format!(
             "{}/{}_{}.log",
             self.cfg.log_dir,
@@ -58,15 +59,17 @@ impl Worker {
         }
         let child_proc = Arc::new(Mutex::new(cmd.args(command.args()).spawn().unwrap()));
 
-        let status = Arc::new(Mutex::new(Status::new(
+        let status = Arc::new(Mutex::new(Status::UnknownState));
+        let job = Box::new(Job::new(
+            job_id,
+            command,
             child_proc.lock().unwrap().id(),
-            0,
-            ProcessState::UnknownState,
-        )));
-        let mut job = Box::new(Job::new(job_id, command, status.clone(), Uuid::new_v4()));
+            status.clone(),
+            owner_id,
+        ));
         self.jobs.push(job.clone());
-        let job_thread = tokio::spawn(async move {
-            job.update_state(ProcessState::Running);
+        let job_thread = thread::spawn(move || {
+            *status.lock().unwrap() = Status::Running;
             match cgroup_config {
                 Some(config) => match unsafe { fork() } {
                     Ok(ForkResult::Parent { child, .. }) => {
@@ -121,11 +124,51 @@ impl Worker {
                 }
             }
         });
-        (job_id, job_thread)
+        (job.clone(), job_thread)
     }
 
-    pub fn stop(&mut self, _job_id: Uuid) -> Result<(), Error> {
-        todo!();
+    pub fn stop(&mut self, job_id: Uuid, owner_id: Uuid, gracefully: bool) -> Result<(), Error> {
+        match self
+            .jobs
+            .iter()
+            .find(|job| job.id() == job_id && job.owner_id() == owner_id)
+        {
+            Some(job) => {
+                let pid = job.pid();
+                let stop_type = if gracefully {
+                    StopType::Stop
+                } else {
+                    StopType::Kill
+                };
+                match std::process::Command::new("kill")
+                    .arg(stop_type.flag())
+                    .arg(pid.to_string())
+                    .spawn()
+                {
+                    Ok(child) => match child.wait_with_output() {
+                        Ok(_) => {
+                            *job.status().lock().unwrap() = Status::Stopped(stop_type);
+                            Ok(())
+                        }
+                        Err(e) => Err(Error::JobStopErr(format!(
+                            "failed to {} job {}: {:?}",
+                            stop_type.as_str(),
+                            job_id,
+                            e
+                        ))),
+                    },
+                    Err(e) => Err(Error::JobStopErr(format!(
+                        "failed to execute {} command: {:?}",
+                        stop_type.as_str(),
+                        e
+                    ))),
+                }
+            }
+            None => Err(Error::JobStopErr(format!(
+                "no job found with id {}",
+                job_id
+            ))),
+        }
     }
 
     pub fn query(&self, _job_id: Uuid) -> Result<Status, Error> {
@@ -152,12 +195,8 @@ impl Worker {
 }
 
 fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
-    let mut status = status.lock().unwrap();
     let proc_lock = Arc::try_unwrap(proc).unwrap();
     let inner = proc_lock.into_inner().unwrap();
-    let pid = inner.id();
-    status.set_pid(pid);
     let output = inner.wait_with_output().unwrap();
-    status.set_state(ProcessState::Exited);
-    status.set_exit_code(output.status.code().unwrap());
+    *status.lock().unwrap() = Status::Exited(output.status.code());
 }

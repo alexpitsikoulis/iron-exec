@@ -12,15 +12,23 @@ use uuid::Uuid;
 pub struct Job {
     id: Uuid,
     cmd: Command,
+    pid: u32,
     status: Arc<Mutex<Status>>,
     owner_id: Uuid,
 }
 
 impl Job {
-    pub fn new(id: Uuid, cmd: Command, status: Arc<Mutex<Status>>, owner_id: Uuid) -> Self {
+    pub fn new(
+        id: Uuid,
+        cmd: Command,
+        pid: u32,
+        status: Arc<Mutex<Status>>,
+        owner_id: Uuid,
+    ) -> Self {
         Job {
             id,
             cmd,
+            pid,
             status,
             owner_id,
         }
@@ -34,6 +42,10 @@ impl Job {
         self.cmd
     }
 
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
     pub fn status(&self) -> Arc<Mutex<Status>> {
         self.status.clone()
     }
@@ -42,8 +54,7 @@ impl Job {
         self.owner_id
     }
 
-    pub fn update_state(&mut self, state: ProcessState) {
-        let mut status = self.status.lock().unwrap();
-        status.set_state(state);
+    pub fn set_pid(&mut self, pid: u32) {
+        self.pid = pid;
     }
 }
