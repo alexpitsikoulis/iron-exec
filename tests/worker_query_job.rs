@@ -68,6 +68,4 @@ pub fn test_query_error() {
             "error message did not match expected message",
         );
     }
-
-    // assert_err!(app.worker.query(Uuid::new_v4(), owner_id))
 }
