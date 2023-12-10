@@ -6,6 +6,15 @@ pub enum Status {
     Stopped(StopType),
 }
 
+impl Status {
+    pub fn is_stopped(&self) -> bool {
+        match self {
+            Self::Stopped(_) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StopType {
     Term,

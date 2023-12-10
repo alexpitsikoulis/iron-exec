@@ -51,8 +51,8 @@ pub fn test_stop_success() {
     }
 }
 
-#[tokio::test]
-pub async fn test_stop_error() {
+#[test]
+pub fn test_stop_error() {
     let mut app = TestApp::new();
 
     let job_id = Uuid::new_v4();
@@ -95,4 +95,6 @@ pub async fn test_stop_error() {
             "error message did not match expected message",
         );
     }
+
+    app.log_handler.consume(format!("echo_{}.log", job.id()));
 }

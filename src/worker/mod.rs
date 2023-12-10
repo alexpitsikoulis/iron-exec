@@ -172,8 +172,14 @@ impl Worker {
         }
     }
 
-    pub fn query(&self, _job_id: Uuid) -> Result<Status, Error> {
-        todo!()
+    pub fn query(&self, job_id: Uuid, owner_id: Uuid) -> Result<Status, Error> {
+        match self.jobs.iter().find(|job| job.id() == job_id && job.owner_id() == owner_id) {
+            Some(job) => {
+                let status = job.status().lock().unwrap().clone();
+                Ok(status)
+            },
+            None => Err(Error::JobQueryErr(format!("no job with id {} found for user", job_id))) 
+        }
     }
 
     pub fn stream(
@@ -199,5 +205,7 @@ fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
     let proc_lock = Arc::try_unwrap(proc).unwrap();
     let inner = proc_lock.into_inner().unwrap();
     let output = inner.wait_with_output().unwrap();
-    *status.lock().unwrap() = Status::Exited(output.status.code());
+    if !status.lock().unwrap().clone().is_stopped() {
+        *status.lock().unwrap() = Status::Exited(output.status.code());
+    }
 }

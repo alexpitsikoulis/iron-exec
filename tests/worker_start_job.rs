@@ -5,8 +5,8 @@ use iron_exec::job::{Command, Status};
 use utils::app::TestApp;
 use uuid::Uuid;
 
-#[tokio::test]
-pub async fn test_echo_hello_world() {
+#[test]
+pub fn test_echo_hello_world() {
     let mut app = TestApp::new();
     let (job, job_handle) = app.worker.start(
         Command::new("echo", &["hello", "world"]),
@@ -44,8 +44,8 @@ pub async fn test_echo_hello_world() {
     );
 }
 
-#[tokio::test]
-pub async fn test_both_stdout_and_stderr() {
+#[test]
+pub fn test_both_stdout_and_stderr() {
     let mut app = TestApp::new();
     let (job, job_handle) = app.worker.start(
         Command::new("sh", &["./tests/scripts/echo_and_error.sh"]),
