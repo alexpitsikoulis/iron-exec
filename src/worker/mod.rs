@@ -14,6 +14,7 @@ use std::{
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
+use syscalls::{syscall, Sysno};
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -22,6 +23,17 @@ pub enum Error {
     JobStopErr(String),
     JobQueryErr(String),
     JobStreamErr(String),
+}
+
+impl Error {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::JobStartErr(e) => e,
+            Self::JobStopErr(e) => e,
+            Self::JobQueryErr(e) => e,
+            Self::JobStreamErr(e) => e,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -135,37 +147,26 @@ impl Worker {
         {
             Some(job) => {
                 let pid = job.pid();
-                let stop_type = if gracefully {
-                    StopType::Stop
-                } else {
-                    StopType::Kill
+                let stop_type = match gracefully {
+                    true => StopType::Term,
+                    false => StopType::Kill,
                 };
-                match std::process::Command::new("kill")
-                    .arg(stop_type.flag())
-                    .arg(pid.to_string())
-                    .spawn()
-                {
-                    Ok(child) => match child.wait_with_output() {
+                unsafe {
+                    match syscall!(Sysno::kill, pid, stop_type.sig()) {
                         Ok(_) => {
                             *job.status().lock().unwrap() = Status::Stopped(stop_type);
                             Ok(())
                         }
                         Err(e) => Err(Error::JobStopErr(format!(
-                            "failed to {} job {}: {:?}",
-                            stop_type.as_str(),
-                            job_id,
+                            "failed to send SIG{} to job: {:?}",
+                            stop_type.as_str().to_uppercase(),
                             e
                         ))),
-                    },
-                    Err(e) => Err(Error::JobStopErr(format!(
-                        "failed to execute {} command: {:?}",
-                        stop_type.as_str(),
-                        e
-                    ))),
+                    }
                 }
             }
             None => Err(Error::JobStopErr(format!(
-                "no job found with id {}",
+                "no job with id {} found for user",
                 job_id
             ))),
         }

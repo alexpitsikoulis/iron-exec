@@ -1,31 +1,35 @@
-use std::{
-    sync::{Arc, Mutex},
-    thread::{self, JoinHandle},
-};
+use std::thread::{self, JoinHandle};
 
 use iron_exec::{
     config::Config,
     job::{CgroupConfig, Command, Job, Status},
-    worker::{Error, Worker},
+    worker::Worker,
 };
 use uuid::Uuid;
 
-use super::logs::LOG_DIR;
+use super::logs::{TestLog, LOG_DIR};
 
-pub struct TestWorker(pub Worker);
+pub struct TestApp {
+    pub worker: Worker,
+    pub log_handler: TestLog,
+}
 
-impl TestWorker {
-    pub fn new() -> TestWorker {
+impl TestApp {
+    pub fn new() -> TestApp {
         let cfg = Config::new(LOG_DIR);
-        TestWorker(Worker::new(cfg))
+        TestApp {
+            worker: Worker::new(cfg),
+            log_handler: TestLog::new(),
+        }
     }
 
+    #[allow(dead_code)]
     pub fn queue_job(
         &mut self,
         command: Command,
         cgroup_config: Option<CgroupConfig>,
     ) -> (Box<Job>, JoinHandle<()>) {
-        let (job, job_handle) = self.0.start(command, cgroup_config, Uuid::new_v4());
+        let (job, job_handle) = self.worker.start(command, cgroup_config, Uuid::new_v4());
 
         let wait_handle = thread::spawn(move || {
             job_handle.join().unwrap().unwrap();

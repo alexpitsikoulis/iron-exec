@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Status {
     UnknownState,
     Running,
@@ -8,21 +8,21 @@ pub enum Status {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StopType {
-    Stop,
+    Term,
     Kill,
 }
 
 impl StopType {
-    pub fn flag(&self) -> &str {
+    pub fn sig(&self) -> usize {
         match self {
-            Self::Stop => "-STOP",
-            Self::Kill => "-9",
+            Self::Term => 15,
+            Self::Kill => 9,
         }
     }
 
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Stop => "stop",
+            Self::Term => "term",
             Self::Kill => "kill",
         }
     }
