@@ -1,1 +1,1 @@
-while true; do echo "looping"; sleep 1; done
+while true; do echo looping; sleep 1; done

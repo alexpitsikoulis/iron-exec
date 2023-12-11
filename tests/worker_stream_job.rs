@@ -1,9 +1,7 @@
 mod utils;
 
 use std::{
-    borrow::BorrowMut,
-    fs::File,
-    io::{BufRead, Read, Seek, SeekFrom},
+    io::Read,
     thread,
     time::Duration,
 };
@@ -30,6 +28,7 @@ pub fn test_stream_job_succes() {
     for (command, ongoing, error_case) in test_cases {
         let (job, job_handle) = app.queue_job(command, None);
         let log_filename = format!("{}_{}.log", command.name(), job.id());
+        let log_filepath = format!("{}/{}", LOG_DIR, log_filename);
         let mut reader = assert_ok!(
             app.worker.stream(job.id(), job.owner_id()),
             "job stream failed to return log file reader when {}",
@@ -39,7 +38,7 @@ pub fn test_stream_job_succes() {
         if !ongoing {
             job_handle.join().unwrap();
 
-            let file_content = std::fs::read(format!("{}/{}", LOG_DIR, log_filename)).unwrap();
+            let file_content = std::fs::read(log_filepath).unwrap();
 
             let mut buf = Vec::new();
             let _ = assert_ok!(
@@ -54,13 +53,24 @@ pub fn test_stream_job_succes() {
             );
         } else {
             let mut buf = Vec::new();
-            thread::sleep(Duration::from_secs(5));
-            
-            let _ = assert_ok!(
-                reader.read_to_end(&mut buf),
-                "failed to read from BufReader",
-            );
-            println!("BUF: {:?}", buf);
+
+            for x in 0..5 {
+                thread::sleep(Duration::from_secs(1));
+                let _ = assert_ok!(
+                    reader.read_to_end(&mut buf),
+                    "failed to read from BufReader",
+                );
+
+                let file_content = std::fs::read(&log_filepath).unwrap();
+                assert_eq!(
+                    file_content,
+                    buf,
+                    "BufReader did not update with log file",
+                );
+            }
+
+            app.worker.stop(job.id(), job.owner_id(), false).unwrap();
+            job_handle.join().unwrap();
         }
         app.log_handler.consume(log_filename);
     }
