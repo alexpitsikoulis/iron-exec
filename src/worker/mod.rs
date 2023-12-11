@@ -12,7 +12,7 @@ use std::{
     os::fd::{AsRawFd, FromRawFd},
     process::{Child, Stdio},
     sync::{Arc, Mutex},
-    thread::{self, JoinHandle},
+    thread::{self, JoinHandle}, io::BufReader,
 };
 use syscalls::{syscall, Sysno};
 use uuid::Uuid;
@@ -140,11 +140,7 @@ impl Worker {
     }
 
     pub fn stop(&mut self, job_id: Uuid, owner_id: Uuid, gracefully: bool) -> Result<(), Error> {
-        match self
-            .jobs
-            .iter()
-            .find(|job| job.id() == job_id && job.owner_id() == owner_id)
-        {
+        match self.find_job(job_id, owner_id) {
             Some(job) => {
                 let pid = job.pid();
                 let stop_type = match gracefully {
@@ -173,21 +169,39 @@ impl Worker {
     }
 
     pub fn query(&self, job_id: Uuid, owner_id: Uuid) -> Result<Status, Error> {
-        match self.jobs.iter().find(|job| job.id() == job_id && job.owner_id() == owner_id) {
+        match self.find_job(job_id, owner_id) {
             Some(job) => {
                 let status = job.status().lock().unwrap().clone();
                 Ok(status)
-            },
-            None => Err(Error::JobQueryErr(format!("no job with id {} found for user", job_id))) 
+            }
+            None => Err(Error::JobQueryErr(format!(
+                "no job with id {} found for user",
+                job_id
+            ))),
         }
     }
 
-    pub fn stream(
-        &self,
-        _ctx: std::task::Context,
-        _process_id: Uuid,
-    ) -> Result<std::io::BufReader<File>, Error> {
-        todo!()
+    pub fn stream(&self, job_id: Uuid, owner_id: Uuid) -> Result<std::io::BufReader<File>, Error> {
+        match self.find_job(job_id, owner_id) {
+            Some(job) => {
+                match std::fs::File::open(format!("{}/{}_{}.log", self.cfg.log_dir, job.cmd().name(), job.id())) {
+                    Ok(log_file) => Ok(BufReader::new(log_file)),
+                    Err(e) => Err(Error::JobStreamErr(format!("failed to open log file: {:?}", e))),
+                }
+            }, 
+            None => {
+                Err(Error::JobStreamErr(format!(
+                    "no job with id {} found for user",
+                    job_id,
+                )))
+            }
+        }
+    }
+
+    fn find_job(&self, job_id: Uuid, owner_id: Uuid) -> Option<&Box<Job>> {
+        self.jobs
+            .iter()
+            .find(|job| job.id() == job_id && job.owner_id() == owner_id)
     }
 
     fn create_log_dir(&self) -> Result<(), Error> {
@@ -209,3 +223,4 @@ fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
         *status.lock().unwrap() = Status::Exited(output.status.code());
     }
 }
+  

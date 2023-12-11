@@ -48,6 +48,8 @@ pub fn test_stop_success() {
         );
 
         assert_ok!(wait_thread.join());
+        app.log_handler
+            .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
     }
 }
 
