@@ -12,10 +12,9 @@ use std::{
     os::fd::{AsRawFd, FromRawFd},
     process::{Child, Stdio},
     sync::{Arc, Mutex},
-    thread::{self, JoinHandle}, io::BufReader, path::Path, time::Duration,
+    thread::{self, JoinHandle}, io::BufReader, path::Path,
 };
 use syscalls::{syscall, Sysno};
-use notify::{Watcher, PollWatcher, RecursiveMode, INotifyWatcher};
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -61,13 +60,6 @@ impl Worker {
         let log_filepath = Path::new(self.cfg.log_dir).join(format!("{}_{}.log",command.name(), job_id));
         let log_file = File::create(&log_filepath).unwrap();
 
-        let mut watcher = PollWatcher::new(|evt| {
-            match evt {
-                Ok(event) => println!("EVENT: {:?}", event),
-                Err(e) => println!("ERROR: {:?}", e),
-            }
-        }, notify::Config::default().with_poll_interval(Duration::from_millis(100))).unwrap();
-        watcher.watch(log_filepath.as_path(), RecursiveMode::NonRecursive).unwrap();
         unsafe {
             cmd = cmd
                 .stdout(Stdio::from_raw_fd(log_file.as_raw_fd()))
