@@ -6,9 +6,10 @@ use std::{
     time::Duration,
 };
 
-use claim::assert_ok;
+use claim::{assert_ok, assert_err};
 use iron_exec::job::Command;
 use utils::{app::TestApp, logs::LOG_DIR};
+use uuid::Uuid;
 
 #[test]
 pub fn test_stream_job_succes() {
@@ -54,7 +55,7 @@ pub fn test_stream_job_succes() {
         } else {
             let mut buf = Vec::new();
 
-            for x in 0..5 {
+            for _ in 0..5 {
                 thread::sleep(Duration::from_secs(1));
                 let _ = assert_ok!(
                     reader.read_to_end(&mut buf),
@@ -73,5 +74,40 @@ pub fn test_stream_job_succes() {
             job_handle.join().unwrap();
         }
         app.log_handler.consume(log_filename);
+    }
+}
+
+#[test]
+pub fn test_stream_job_error() {
+    let mut app = TestApp::new();
+
+    let job_id = Uuid::new_v4();
+    let (job, job_handle) = app.queue_job(Command::new("echo", &["hello", "world"]), None);
+    job_handle.join().unwrap();
+
+    let test_cases = [
+        (job_id, Uuid::new_v4(), "stream a non-existent job", format!("no job with id {} found for user", job_id), false),
+        (job.id(), Uuid::new_v4(), "stream a job the current user does not own", format!("no job with id {} found for user", job.id()), false),
+        (job.id(), job.owner_id(), "stream a job where the log file has been deleted", "failed to open log file: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }".into(), true),
+    ];
+
+    for (job_id, owner_id, error_case, error_message, logs_deleted) in test_cases {
+        println!("JOBS: {:?}", app.worker.jobs);
+        println!("JOB ID: {}", job_id);
+        if logs_deleted {
+            app.log_handler.consume(format!("echo_{}.log", job_id));
+        }
+
+        let e = assert_err!(
+            app.worker.stream(job_id, owner_id),
+            "stream job did not error when trying to {}",
+            error_case,
+        );
+        
+        assert_eq!(
+            error_message,
+            e.as_str(),
+            "error message did not match expected message",
+        );
     }
 }
