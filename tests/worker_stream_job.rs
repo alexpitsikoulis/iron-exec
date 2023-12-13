@@ -1,12 +1,8 @@
 mod utils;
 
-use std::{
-    io::Read,
-    thread,
-    time::Duration,
-};
+use std::{io::Read, thread, time::Duration};
 
-use claim::{assert_ok, assert_err};
+use claim::{assert_err, assert_ok};
 use iron_exec::job::Command;
 use utils::{app::TestApp, logs::LOG_DIR};
 use uuid::Uuid;
@@ -15,19 +11,21 @@ use uuid::Uuid;
 pub fn test_stream_job_succes() {
     let mut app = TestApp::new();
 
-    let test_cases = [(
-        Command::new("echo", &["hello", "world"]),
-        false,
-        "job exited successfully",
-    ),
-    (
-        Command::new("sh", &["./tests/scripts/infinite_loop.sh"]),
-        true,
-        "job loops infinitely",
-    )];
+    let test_cases = [
+        (
+            Command::new("echo", &["hello", "world"]),
+            false,
+            "job exited successfully",
+        ),
+        (
+            Command::new("sh", &["./tests/scripts/infinite_loop.sh"]),
+            true,
+            "job loops infinitely",
+        ),
+    ];
 
     for (command, ongoing, error_case) in test_cases {
-        let (job, job_handle) = app.queue_job(command, None);
+        let (job, job_handle) = app.worker.start(command, None, Uuid::new_v4()).unwrap();
         let log_filename = format!("{}_{}.log", command.name(), job.id());
         let log_filepath = format!("{}/{}", LOG_DIR, log_filename);
         let mut reader = assert_ok!(
@@ -63,11 +61,7 @@ pub fn test_stream_job_succes() {
                 );
 
                 let file_content = std::fs::read(&log_filepath).unwrap();
-                assert_eq!(
-                    file_content,
-                    buf,
-                    "BufReader did not update with log file",
-                );
+                assert_eq!(file_content, buf, "BufReader did not update with log file",);
             }
 
             app.worker.stop(job.id(), job.owner_id(), false).unwrap();
@@ -82,7 +76,14 @@ pub fn test_stream_job_error() {
     let mut app = TestApp::new();
 
     let job_id = Uuid::new_v4();
-    let (job, job_handle) = app.queue_job(Command::new("echo", &["hello", "world"]), None);
+    let (job, job_handle) = app
+        .worker
+        .start(
+            Command::new("echo", &["hello", "world"]),
+            None,
+            Uuid::new_v4(),
+        )
+        .unwrap();
     job_handle.join().unwrap();
 
     let test_cases = [
@@ -95,7 +96,8 @@ pub fn test_stream_job_error() {
         println!("JOBS: {:?}", app.worker.jobs);
         println!("JOB ID: {}", job_id);
         if logs_deleted {
-            app.log_handler.consume(format!("echo_{}.log", job_id));
+            app.log_handler
+                .consume(format!("{}_{}.log", job.cmd().name(), job_id));
         }
 
         let e = assert_err!(
@@ -103,7 +105,7 @@ pub fn test_stream_job_error() {
             "stream job did not error when trying to {}",
             error_case,
         );
-        
+
         assert_eq!(
             error_message,
             e.as_str(),

@@ -18,28 +18,8 @@ impl TestApp {
     pub fn new() -> TestApp {
         let cfg = Config::new(LOG_DIR);
         TestApp {
-            worker: Worker::new(cfg),
+            worker: Worker::new(cfg).unwrap(),
             log_handler: TestLog::new(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn queue_job(
-        &mut self,
-        command: Command,
-        cgroup_config: Option<CgroupConfig>,
-    ) -> (Box<Job>, JoinHandle<()>) {
-        let (job, job_handle) = self.worker.start(command, cgroup_config, Uuid::new_v4());
-
-        let wait_handle = thread::spawn(move || {
-            job_handle.join().unwrap().unwrap();
-        });
-
-        loop {
-            if *job.status().lock().unwrap() == Status::Running {
-                break;
-            }
-        }
-        (job, wait_handle)
     }
 }

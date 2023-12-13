@@ -32,7 +32,7 @@ pub fn test_stop_success() {
     ];
 
     for (i, (command, error_message, gracefully)) in test_cases.iter().enumerate() {
-        let (job, wait_thread) = app.queue_job(*command, None);
+        let (job, wait_thread) = app.worker.start(*command, None, Uuid::new_v4()).unwrap();
 
         assert_ok!(app.worker.stop(job.id(), job.owner_id(), *gracefully));
 
@@ -58,7 +58,14 @@ pub fn test_stop_error() {
     let mut app = TestApp::new();
 
     let job_id = Uuid::new_v4();
-    let (job, job_handle) = app.queue_job(Command::new("echo", &["hello", "world"]), None);
+    let (job, job_handle) = app
+        .worker
+        .start(
+            Command::new("echo", &["hello", "world"]),
+            None,
+            Uuid::new_v4(),
+        )
+        .unwrap();
     job_handle.join().unwrap();
 
     let test_cases = [
@@ -98,5 +105,5 @@ pub fn test_stop_error() {
         );
     }
 
-    app.log_handler.consume(format!("echo_{}.log", job.id()));
+    app.log_handler.consume(format!("{}_{}.log", job.cmd().name(), job.id()));
 }

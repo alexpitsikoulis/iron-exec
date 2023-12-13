@@ -48,7 +48,7 @@ pub fn test_query_success() {
     ];
 
     for (command, expected_status, gracefully, error_message, close_after) in test_cases {
-        let (job, wait_handle) = app.queue_job(command, None);
+        let (job, wait_handle) = app.worker.start(command, None, Uuid::new_v4()).unwrap();
 
         if let Some(gracefully) = gracefully {
             app.worker
@@ -95,7 +95,14 @@ pub fn test_query_error() {
     let mut app = TestApp::new();
 
     let job_id = Uuid::new_v4();
-    let (job, job_handle) = app.queue_job(Command::new("echo", &["hello", "world"]), None);
+    let (job, job_handle) = app
+        .worker
+        .start(
+            Command::new("echo", &["hello", "world"]),
+            None,
+            Uuid::new_v4(),
+        )
+        .unwrap();
     job_handle.join().unwrap();
 
     let test_cases = [
@@ -121,5 +128,5 @@ pub fn test_query_error() {
         );
     }
 
-    app.log_handler.consume(format!("echo_{}.log", job.id()));
+    app.log_handler.consume(format!("{}_{}.log", job.cmd().name(), job.id()));
 }
