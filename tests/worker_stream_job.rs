@@ -93,8 +93,6 @@ pub fn test_stream_job_error() {
     ];
 
     for (job_id, owner_id, error_case, error_message, logs_deleted) in test_cases {
-        println!("JOBS: {:?}", app.worker.jobs);
-        println!("JOB ID: {}", job_id);
         if logs_deleted {
             app.log_handler
                 .consume(format!("{}_{}.log", job.cmd().name(), job_id));
