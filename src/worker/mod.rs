@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    job::{add_to_cgroup, create_cgroup, CgroupConfig, Command, Job, Status, StopType},
+    job::{CgroupConfig, Command, Job, Status, StopType},
 };
 use nix::{
     sys::wait::waitpid,
@@ -14,7 +14,7 @@ use std::{
     path::Path,
     process::{Child, Stdio},
     sync::{Arc, Mutex},
-    thread::{JoinHandle, self},
+    thread::{self, JoinHandle},
 };
 use syscalls::{syscall, Sysno};
 use uuid::Uuid;
@@ -133,10 +133,10 @@ impl Worker {
                         )));
                     }
                 }
-                Ok(ForkResult::Child) => match create_cgroup(command.name(), job_id, config) {
+                Ok(ForkResult::Child) => match config.init(job.clone()) {
                     Ok(cgroup_path) => {
                         let pid = getpid().as_raw() as u32;
-                        if let Err(e) = add_to_cgroup(pid, cgroup_path) {
+                        if let Err(e) = config.add_process(cgroup_path, pid) {
                             child_proc.lock().map_err(|e| Error::JobStartErr(format!("failed to lock child process mutex for job {}: {:?}", job.id(), e)))?.kill().expect("failed to kill process after it failed to be added to the cgroup");
                             return Err(Error::JobStartErr(format!(
                                 "add_to_cgroup failed: {:?}",

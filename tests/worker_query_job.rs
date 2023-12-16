@@ -128,5 +128,6 @@ pub fn test_query_error() {
         );
     }
 
-    app.log_handler.consume(format!("{}_{}.log", job.cmd().name(), job.id()));
+    app.log_handler
+        .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
 }
