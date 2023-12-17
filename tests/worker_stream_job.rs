@@ -25,11 +25,12 @@ pub fn test_stream_job_succes() {
     ];
 
     for (command, ongoing, error_case) in test_cases {
-        let (job, job_handle) = app.worker.start(command, None, Uuid::new_v4()).unwrap();
-        let log_filename = format!("{}_{}.log", command.name(), job.id());
+        let owner_id = Uuid::new_v4();
+        let (job_id, job_handle) = app.worker.start(command, None, owner_id).unwrap();
+        let log_filename = format!("{}_{}.log", command.name(), job_id);
         let log_filepath = format!("{}/{}", LOG_DIR, log_filename);
         let mut reader = assert_ok!(
-            app.worker.stream(job.id(), job.owner_id()),
+            app.worker.stream(job_id, owner_id),
             "job stream failed to return log file reader when {}",
             error_case,
         );
@@ -64,7 +65,7 @@ pub fn test_stream_job_succes() {
                 assert_eq!(file_content, buf, "BufReader did not update with log file",);
             }
 
-            app.worker.stop(job.id(), job.owner_id(), false).unwrap();
+            app.worker.stop(job_id, owner_id, false).unwrap();
             job_handle.join().unwrap();
         }
         app.log_handler.consume(log_filename);
@@ -76,26 +77,22 @@ pub fn test_stream_job_error() {
     let mut app = TestApp::new();
 
     let job_id = Uuid::new_v4();
+    let owner_id = Uuid::new_v4();
     let (job, job_handle) = app
         .worker
-        .start(
-            Command::new("echo", &["hello", "world"]),
-            None,
-            Uuid::new_v4(),
-        )
+        .start(Command::new("echo", &["hello", "world"]), None, owner_id)
         .unwrap();
     job_handle.join().unwrap();
 
     let test_cases = [
         (job_id, Uuid::new_v4(), "stream a non-existent job", format!("no job with id {} found for user", job_id), false),
-        (job.id(), Uuid::new_v4(), "stream a job the current user does not own", format!("no job with id {} found for user", job.id()), false),
-        (job.id(), job.owner_id(), "stream a job where the log file has been deleted", "failed to open log file: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }".into(), true),
+        (job, Uuid::new_v4(), "stream a job the current user does not own", format!("no job with id {} found for user", job), false),
+        (job, owner_id, "stream a job where the log file has been deleted", "failed to open log file: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }".into(), true),
     ];
 
     for (job_id, owner_id, error_case, error_message, logs_deleted) in test_cases {
         if logs_deleted {
-            app.log_handler
-                .consume(format!("{}_{}.log", job.cmd().name(), job_id));
+            app.log_handler.consume(format!("echo_{}.log", job_id));
         }
 
         let e = assert_err!(
@@ -107,7 +104,8 @@ pub fn test_stream_job_error() {
         assert_eq!(
             error_message,
             e.as_str(),
-            "error message did not match expected message",
+            "error message did not match expected message when {}",
+            error_case,
         );
     }
 }

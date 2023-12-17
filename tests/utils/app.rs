@@ -1,9 +1,8 @@
 use std::thread::{self, JoinHandle};
 
 use iron_exec::{
-    config::Config,
     job::{CgroupConfig, Command, Job, Status},
-    worker::Worker,
+    worker::{Config, Worker},
 };
 use uuid::Uuid;
 

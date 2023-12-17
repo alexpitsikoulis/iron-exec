@@ -48,17 +48,13 @@ pub fn test_query_success() {
     ];
 
     for (command, expected_status, gracefully, error_message, close_after) in test_cases {
-        let (job, wait_handle) = app.worker.start(command, None, Uuid::new_v4()).unwrap();
+        let owner_id = Uuid::new_v4();
+        let (job_id, wait_handle) = app.worker.start(command, None, owner_id).unwrap();
 
         if let Some(gracefully) = gracefully {
-            app.worker
-                .stop(job.id(), job.owner_id(), gracefully)
-                .unwrap();
+            app.worker.stop(job_id, owner_id, gracefully).unwrap();
             wait_handle.join().unwrap();
-            let status = assert_ok!(
-                app.worker.query(job.id(), job.owner_id()),
-                "query request failed"
-            );
+            let status = assert_ok!(app.worker.query(job_id, owner_id), "query request failed");
             assert_eq!(
                 expected_status, status,
                 "job was not in expected state when {}",
@@ -66,17 +62,17 @@ pub fn test_query_success() {
             );
         } else {
             if close_after {
-                let status = assert_ok!(app.worker.query(job.id(), job.owner_id()));
+                let status = assert_ok!(app.worker.query(job_id, owner_id));
                 assert_eq!(
                     expected_status, status,
                     "job was not in expected state when {}",
                     error_message
                 );
-                app.worker.stop(job.id(), job.owner_id(), false).unwrap();
+                app.worker.stop(job_id, owner_id, false).unwrap();
                 wait_handle.join().unwrap();
             } else {
                 wait_handle.join().unwrap();
-                let status = assert_ok!(app.worker.query(job.id(), job.owner_id()));
+                let status = assert_ok!(app.worker.query(job_id, owner_id));
                 assert_eq!(
                     expected_status, status,
                     "job was not in expected state when {}",
@@ -86,7 +82,7 @@ pub fn test_query_success() {
         }
 
         app.log_handler
-            .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
+            .consume(format!("{}_{}.log", command.name(), job_id));
     }
 }
 
@@ -108,7 +104,7 @@ pub fn test_query_error() {
     let test_cases = [
         (job_id, Uuid::new_v4(), "query a non-existent job"),
         (
-            job.id(),
+            job,
             Uuid::new_v4(),
             "query existing job with wrong owner_id",
         ),
@@ -128,6 +124,5 @@ pub fn test_query_error() {
         );
     }
 
-    app.log_handler
-        .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
+    app.log_handler.consume(format!("echo_{}.log", job));
 }

@@ -32,9 +32,10 @@ pub fn test_stop_success() {
     ];
 
     for (i, (command, error_message, gracefully)) in test_cases.iter().enumerate() {
-        let (job, wait_thread) = app.worker.start(*command, None, Uuid::new_v4()).unwrap();
+        let owner_id = Uuid::new_v4();
+        let (job_id, wait_thread) = app.worker.start(*command, None, owner_id).unwrap();
 
-        assert_ok!(app.worker.stop(job.id(), job.owner_id(), *gracefully));
+        assert_ok!(app.worker.stop(job_id, owner_id, *gracefully));
 
         assert_eq!(
             Status::Stopped(if *gracefully {
@@ -49,7 +50,7 @@ pub fn test_stop_success() {
 
         assert_ok!(wait_thread.join());
         app.log_handler
-            .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
+            .consume(format!("{}_{}.log", command.name(), job_id));
     }
 }
 
@@ -58,13 +59,10 @@ pub fn test_stop_error() {
     let mut app = TestApp::new();
 
     let job_id = Uuid::new_v4();
+    let owner_id = Uuid::new_v4();
     let (job, job_handle) = app
         .worker
-        .start(
-            Command::new("echo", &["hello", "world"]),
-            None,
-            Uuid::new_v4(),
-        )
+        .start(Command::new("echo", &["hello", "world"]), None, owner_id)
         .unwrap();
     job_handle.join().unwrap();
 
@@ -77,15 +75,15 @@ pub fn test_stop_error() {
             format!("no job with id {} found for user", job_id),
         ),
         (
-            job.id(),
-            job.owner_id(),
+            job,
+            owner_id,
             false,
             "kill an exited process",
             "failed to send SIGKILL to job: ESRCH".into(),
         ),
         (
-            job.id(),
-            job.owner_id(),
+            job,
+            owner_id,
             true,
             "terminate an exited process",
             "failed to send SIGTERM to job: ESRCH".into(),
@@ -101,10 +99,10 @@ pub fn test_stop_error() {
         assert_eq!(
             error_message,
             stop_res.as_str(),
-            "error message did not match expected message",
+            "error message did not match expected message when trying to {}",
+            error_case,
         );
     }
 
-    app.log_handler
-        .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
+    app.log_handler.consume(format!("echo_{}.log", job));
 }

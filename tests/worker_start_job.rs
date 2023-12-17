@@ -18,7 +18,7 @@ pub fn test_start_job_success() {
     for (i, (command, expected_status, expected_log_content, error_case)) in
         test_cases.iter().enumerate()
     {
-        let (job, wait_handle) = assert_ok!(app.worker.start(*command, None, Uuid::new_v4(),));
+        let (job_id, wait_handle) = assert_ok!(app.worker.start(*command, None, Uuid::new_v4(),));
 
         assert_eq!(
             i + 1,
@@ -44,7 +44,7 @@ pub fn test_start_job_success() {
 
         let logs = app
             .log_handler
-            .consume(format!("{}_{}.log", job.cmd().name(), job.id()));
+            .consume(format!("{}_{}.log", command.name(), job_id));
         assert_eq!(
             expected_log_content.as_bytes(),
             logs,
