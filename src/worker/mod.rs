@@ -1,13 +1,12 @@
 use crate::job::{Command, Job, Status, StopType};
 use std::{
-    ffi::CString,
     fs::File,
     io::BufReader,
     os::fd::{AsRawFd, FromRawFd},
     path::Path,
     process::{Child, Stdio},
     sync::{Arc, Mutex},
-    thread::{self, JoinHandle},
+    thread::{self, JoinHandle}
 };
 use syscalls::{syscall, Sysno};
 use uuid::Uuid;
@@ -15,6 +14,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug)]
 pub enum Error {
     WorkerErr(String),
+    JobErr(String),
     JobStartErr(String),
     JobStopErr(String),
     JobQueryErr(String),
@@ -25,6 +25,7 @@ impl Error {
     pub fn as_str(&self) -> &str {
         match self {
             Self::WorkerErr(e) => e,
+            Self::JobErr(e) => e,
             Self::JobStartErr(e) => e,
             Self::JobStopErr(e) => e,
             Self::JobQueryErr(e) => e,
@@ -67,12 +68,15 @@ impl Worker {
         &mut self,
         command: Command,
         owner_id: Uuid,
-    ) -> Result<(Uuid, JoinHandle<()>), Error> {
+    ) -> Result<(Uuid, JoinHandle<Result<(), Error>>), Error> {
         let job_id = Uuid::new_v4();
         let mut cmd = &mut std::process::Command::new(command.name());
         let log_filepath =
             Path::new(self.cfg.log_dir).join(format!("{}_{}.log", command.name(), job_id));
-        let log_filepath_string = log_filepath.to_str().unwrap();
+        let log_filepath_string = match log_filepath.to_str() {
+            Some(path) => path,
+            None => "/tmp",
+        };
         let log_file = File::create(&log_filepath)
             .map_err(|e| Error::JobStartErr(format!("failed to create log file: {:?}", e)))?;
 
@@ -106,7 +110,10 @@ impl Worker {
         self.jobs.push(Box::new(Job::new(
             job_id,
             command,
-            child_proc.lock().unwrap().id(),
+            match child_proc.lock() {
+                Ok(proc) => proc.id(),
+                Err(e) => return Err(Error::JobStartErr(format!("failed to lock child process mutex to access pid: {:?}", e))),
+            },
             status.clone(),
             owner_id,
         )));
@@ -213,11 +220,22 @@ impl Worker {
     }
 }
 
-fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
-    let proc_lock = Arc::try_unwrap(proc).unwrap();
-    let inner = proc_lock.into_inner().unwrap();
-    let output = inner.wait_with_output().unwrap();
-    if !status.lock().unwrap().clone().is_stopped() {
-        *status.lock().unwrap() = Status::Exited(output.status.code());
+fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) -> Result<(), Error> {
+    let proc_lock = match Arc::try_unwrap(proc) {
+        Ok(mtx) => mtx,
+        Err(e) => return Err(Error::JobErr(format!("failed to unwrap child process ARC: {:?}", e))),
+    };
+    let inner = match proc_lock.into_inner() {
+        Ok(inner) => inner,
+        Err(e) => return Err(Error::JobErr(format!("failed to pull inner value from child process mutex: {:?}", e))),
+    };
+    let output = match inner.wait_with_output() {
+        Ok(out) => out,
+        Err(e) => return Err(Error::JobErr(format!("child process failed: {:?}", e))),
+    };
+    match status.lock() {
+        Ok(mut status) => if !status.is_stopped() { *status = Status::Exited(output.status.code()) },
+        Err(e) => return Err(Error::JobErr(format!("failed to lock status mutex to update exit code: {:?}", e))),
     }
+    Ok(())
 }
