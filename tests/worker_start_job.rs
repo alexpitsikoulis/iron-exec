@@ -18,7 +18,7 @@ pub fn test_start_job_success() {
     for (i, (command, expected_status, expected_log_content, error_case)) in
         test_cases.iter().enumerate()
     {
-        let (job_id, wait_handle) = assert_ok!(app.worker.start(*command, None, Uuid::new_v4(),));
+        let (job_id, wait_handle) = assert_ok!(app.worker.start(*command, Uuid::new_v4(),));
 
         assert_eq!(
             i + 1,
@@ -65,7 +65,7 @@ pub fn test_start_job_error() {
 
     for (command, error_case) in test_cases {
         let e = assert_err!(
-            app.worker.start(command, None, Uuid::new_v4()),
+            app.worker.start(command, Uuid::new_v4()),
             "job did not error when {}",
             error_case
         );

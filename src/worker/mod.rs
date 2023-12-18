@@ -1,16 +1,9 @@
-use crate::job::{CgroupConfig, Command, Job, Status, StopType};
-use nix::{
-    sys::wait::waitpid,
-    unistd::{execv, fork, getpid, setpgid, ForkResult},
-};
+use crate::job::{Command, Job, Status, StopType};
 use std::{
     ffi::CString,
     fs::File,
     io::BufReader,
-    os::{
-        fd::{AsRawFd, FromRawFd},
-        unix::process::CommandExt,
-    },
+    os::fd::{AsRawFd, FromRawFd},
     path::Path,
     process::{Child, Stdio},
     sync::{Arc, Mutex},
@@ -73,7 +66,6 @@ impl Worker {
     pub fn start(
         &mut self,
         command: Command,
-        cgroup_config: Option<CgroupConfig>,
         owner_id: Uuid,
     ) -> Result<(Uuid, JoinHandle<()>), Error> {
         let job_id = Uuid::new_v4();
@@ -111,88 +103,15 @@ impl Worker {
             ))
         })? = Status::Running;
 
-        match cgroup_config.clone() {
-            Some(mut config) => match config.init(command.name(), job_id) {
-                Ok(()) => match unsafe { fork() } {
-                    Ok(ForkResult::Parent { child, .. }) => {
-                        config.add_process(child).map_err(|e| {
-                            Error::JobStartErr(format!(
-                                "failed to add parent process to cgroup: {:?}",
-                                e
-                            ))
-                        })?;
-                        nix::sys::wait::waitpid(child, None).map_err(|e| {
-                            Error::JobStartErr(format!("failed to wait for child process: {:?}", e))
-                        })?;
-                    }
-                    Ok(ForkResult::Child) => {
-                        config.add_process(getpid()).map_err(|e| {
-                            Error::JobStartErr(format!(
-                                "failed to add parent process to cgroup: {:?}",
-                                e
-                            ))
-                        })?;
-                        let job = Box::new(Job::new(
-                            job_id,
-                            command,
-                            getpid().as_raw() as u32,
-                            status.clone(),
-                            owner_id,
-                        ));
-                        self.jobs.push(job.clone());
-                        setpgid(getpid(), getpid()).expect("failed to set PGID");
+        self.jobs.push(Box::new(Job::new(
+            job_id,
+            command,
+            child_proc.lock().unwrap().id(),
+            status.clone(),
+            owner_id,
+        )));
 
-                        let cmd = CString::new(command.name()).map_err(|e| {
-                            Error::JobStartErr(format!(
-                                "failed to generate cstring from command name: {:?}",
-                                e
-                            ))
-                        })?;
-                        let mut args: Vec<CString> = Vec::new();
-                        for arg in command.args() {
-                            args.push(CString::new(*arg).map_err(|e| {
-                                Error::JobStartErr(format!(
-                                    "failed to generate cstring from command name: {:?}",
-                                    e
-                                ))
-                            })?)
-                        }
-                        match execv(&cmd, &args) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                return Err(Error::JobStartErr(format!(
-                                    "failed to execute child process: {:?}",
-                                    e,
-                                )));
-                            }
-                        };
-                    }
-                    Err(e) => {
-                        return Err(Error::JobStartErr(format!(
-                            "failed to fork process: {:?}",
-                            e
-                        )))
-                    }
-                },
-                Err(e) => {
-                    return Err(Error::JobStartErr(format!(
-                        "failed to initialize cgroup: {:?}",
-                        e
-                    )))
-                }
-            },
-            None => {
-                let job = Box::new(Job::new(
-                    job_id,
-                    command,
-                    getpid().as_raw() as u32,
-                    status.clone(),
-                    owner_id,
-                ));
-                self.jobs.push(job.clone());
-            }
-        }
-        let wait_thread = thread::spawn(|| wait(status, child_proc, cgroup_config));
+        let wait_thread = thread::spawn(|| wait(status, child_proc));
         Ok((job_id, wait_thread))
     }
 
@@ -294,7 +213,7 @@ impl Worker {
     }
 }
 
-fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>, cgroup: Option<CgroupConfig>) {
+fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) {
     let proc_lock = Arc::try_unwrap(proc).unwrap();
     let inner = proc_lock.into_inner().unwrap();
     let output = inner.wait_with_output().unwrap();

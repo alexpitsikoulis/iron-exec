@@ -1,10 +1,4 @@
-use std::thread::{self, JoinHandle};
-
-use iron_exec::{
-    job::{CgroupConfig, Command, Job, Status},
-    worker::{Config, Worker},
-};
-use uuid::Uuid;
+use iron_exec::worker::{Config, Worker};
 
 use super::logs::{TestLog, LOG_DIR};
 

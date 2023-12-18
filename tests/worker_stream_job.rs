@@ -26,7 +26,7 @@ pub fn test_stream_job_succes() {
 
     for (command, ongoing, error_case) in test_cases {
         let owner_id = Uuid::new_v4();
-        let (job_id, job_handle) = app.worker.start(command, None, owner_id).unwrap();
+        let (job_id, job_handle) = app.worker.start(command, owner_id).unwrap();
         let log_filename = format!("{}_{}.log", command.name(), job_id);
         let log_filepath = format!("{}/{}", LOG_DIR, log_filename);
         let mut reader = assert_ok!(
@@ -80,7 +80,7 @@ pub fn test_stream_job_error() {
     let owner_id = Uuid::new_v4();
     let (job, job_handle) = app
         .worker
-        .start(Command::new("echo", &["hello", "world"]), None, owner_id)
+        .start(Command::new("echo", &["hello", "world"]), owner_id)
         .unwrap();
     job_handle.join().unwrap();
 

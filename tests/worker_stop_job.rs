@@ -33,7 +33,7 @@ pub fn test_stop_success() {
 
     for (i, (command, error_message, gracefully)) in test_cases.iter().enumerate() {
         let owner_id = Uuid::new_v4();
-        let (job_id, wait_thread) = app.worker.start(*command, None, owner_id).unwrap();
+        let (job_id, wait_thread) = app.worker.start(*command, owner_id).unwrap();
 
         assert_ok!(app.worker.stop(job_id, owner_id, *gracefully));
 
@@ -62,7 +62,7 @@ pub fn test_stop_error() {
     let owner_id = Uuid::new_v4();
     let (job, job_handle) = app
         .worker
-        .start(Command::new("echo", &["hello", "world"]), None, owner_id)
+        .start(Command::new("echo", &["hello", "world"]), owner_id)
         .unwrap();
     job_handle.join().unwrap();
 
