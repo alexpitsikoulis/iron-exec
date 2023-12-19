@@ -10,15 +10,15 @@ pub fn test_start_job_success() {
     let mut app = TestApp::new();
 
     let test_cases = [
-        (Command::new("echo", &["hello world"]), Status::Exited(Some(0)), "hello world\n", "job should exit successfully and write to stdout"),
-        (Command::new("sh", &["./tests/scripts/error.sh"]), Status::Exited(Some(127)), "./tests/scripts/error.sh: 1: SET: not found\n", "job should exit with 127 and write to stderr"),
-        (Command::new("sh", &["./tests/scripts/echo_and_error.sh"]), Status::Exited(Some(127)), "testing\none more\nstderr test\nback to stdout\n./tests/scripts/echo_and_error.sh: 5: SET: not found\n", "job should exit with 127 and write to stdout and stderr"),
+        (Command::new("echo", vec!["hello world".into()]), Status::Exited(Some(0)), "hello world\n", "job should exit successfully and write to stdout"),
+        (Command::new("sh", vec!["./tests/scripts/error.sh".into()]), Status::Exited(Some(127)), "./tests/scripts/error.sh: 1: SET: not found\n", "job should exit with 127 and write to stderr"),
+        (Command::new("sh", vec!["./tests/scripts/echo_and_error.sh".into()]), Status::Exited(Some(127)), "testing\none more\nstderr test\nback to stdout\n./tests/scripts/echo_and_error.sh: 5: SET: not found\n", "job should exit with 127 and write to stdout and stderr"),
     ];
 
     for (i, (command, expected_status, expected_log_content, error_case)) in
         test_cases.iter().enumerate()
     {
-        let (job_id, wait_handle) = assert_ok!(app.worker.start(*command, Uuid::new_v4(),));
+        let (job_id, wait_handle) = assert_ok!(app.worker.start(command.clone(), Uuid::new_v4(),));
 
         assert_eq!(
             i + 1,
@@ -34,7 +34,7 @@ pub fn test_start_job_success() {
             error_case,
         );
 
-        assert_ok!(wait_handle.join(), "failed to join job thread",);
+        assert_ok!(wait_handle.join(), "failed to join job thread",).unwrap();
         assert_eq!(
             *expected_status,
             *app.worker.jobs.get(i).unwrap().status().lock().unwrap(),
@@ -46,8 +46,8 @@ pub fn test_start_job_success() {
             .log_handler
             .consume(format!("{}_{}.log", command.name(), job_id));
         assert_eq!(
-            expected_log_content.as_bytes(),
-            logs,
+            expected_log_content.to_string(),
+            String::from_utf8(logs).unwrap(),
             "job logs did not match expected content when {}",
             error_case,
         );
@@ -59,7 +59,7 @@ pub fn test_start_job_error() {
     let mut app = TestApp::new();
 
     let test_cases = [(
-        Command::new("whatever-madeup-command", &[]),
+        Command::new("whatever-madeup-command", vec![]),
         "job is started with invalid command",
     )];
 

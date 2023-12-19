@@ -37,7 +37,7 @@ impl Job {
     }
 
     pub fn cmd(&self) -> Command {
-        self.cmd
+        self.cmd.clone()
     }
 
     pub fn pid(&self) -> u32 {

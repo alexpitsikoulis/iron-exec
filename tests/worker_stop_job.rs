@@ -10,22 +10,22 @@ pub fn test_stop_success() {
 
     let test_cases = [
         (
-            Command::new("sh", &["./tests/scripts/infinite_loop.sh"]),
+            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
             "kill an infinite loop",
             false,
         ),
         (
-            Command::new("sh", &["./tests/scripts/long_runtime.sh"]),
+            Command::new("sh", vec!["./tests/scripts/long_runtime.sh".into()]),
             "kill a long running process",
             false,
         ),
         (
-            Command::new("sh", &["./tests/scripts/infinite_loop.sh"]),
+            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
             "terminate an infinite loop",
             true,
         ),
         (
-            Command::new("sh", &["./tests/scripts/long_runtime.sh"]),
+            Command::new("sh", vec!["./tests/scripts/long_runtime.sh".into()]),
             "terminate a long running process",
             true,
         ),
@@ -33,7 +33,7 @@ pub fn test_stop_success() {
 
     for (i, (command, error_message, gracefully)) in test_cases.iter().enumerate() {
         let owner_id = Uuid::new_v4();
-        let (job_id, wait_thread) = app.worker.start(*command, owner_id).unwrap();
+        let (job_id, wait_thread) = app.worker.start(command.clone(), owner_id).unwrap();
 
         assert_ok!(app.worker.stop(job_id, owner_id, *gracefully));
 
@@ -48,7 +48,7 @@ pub fn test_stop_success() {
             error_message,
         );
 
-        assert_ok!(wait_thread.join());
+        assert_ok!(wait_thread.join()).unwrap();
         app.log_handler
             .consume(format!("{}_{}.log", command.name(), job_id));
     }
@@ -62,9 +62,12 @@ pub fn test_stop_error() {
     let owner_id = Uuid::new_v4();
     let (job, job_handle) = app
         .worker
-        .start(Command::new("echo", &["hello", "world"]), owner_id)
+        .start(
+            Command::new("echo", vec!["hello".into(), "world".into()]),
+            owner_id,
+        )
         .unwrap();
-    job_handle.join().unwrap();
+    job_handle.join().unwrap().unwrap();
 
     let test_cases = [
         (

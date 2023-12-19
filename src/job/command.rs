@@ -1,11 +1,11 @@
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Command {
     name: &'static str,
-    args: &'static [&'static str],
+    args: Vec<String>,
 }
 
 impl Command {
-    pub fn new(name: &'static str, args: &'static [&'static str]) -> Self {
+    pub fn new(name: &'static str, args: Vec<String>) -> Self {
         Command { name, args }
     }
 
@@ -13,7 +13,7 @@ impl Command {
         self.name
     }
 
-    pub fn args(&self) -> &'static [&'static str] {
-        self.args
+    pub fn args(&self) -> Vec<String> {
+        self.args.clone()
     }
 }
