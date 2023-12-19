@@ -1,12 +1,13 @@
 use crate::job::{Command, Job, Status, StopType};
 use std::{
+    fmt::Display,
     fs::File,
     io::BufReader,
     os::fd::{AsRawFd, FromRawFd},
     path::Path,
     process::{Child, Stdio},
     sync::{Arc, Mutex},
-    thread::{self, JoinHandle}
+    thread::{self, JoinHandle},
 };
 use syscalls::{syscall, Sysno};
 use uuid::Uuid;
@@ -33,6 +34,14 @@ impl Error {
         }
     }
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.as_str())
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -112,7 +121,12 @@ impl Worker {
             command,
             match child_proc.lock() {
                 Ok(proc) => proc.id(),
-                Err(e) => return Err(Error::JobStartErr(format!("failed to lock child process mutex to access pid: {:?}", e))),
+                Err(e) => {
+                    return Err(Error::JobStartErr(format!(
+                        "failed to lock child process mutex to access pid: {:?}",
+                        e
+                    )))
+                }
             },
             status.clone(),
             owner_id,
@@ -223,19 +237,38 @@ impl Worker {
 fn wait(status: Arc<Mutex<Status>>, proc: Arc<Mutex<Child>>) -> Result<(), Error> {
     let proc_lock = match Arc::try_unwrap(proc) {
         Ok(mtx) => mtx,
-        Err(e) => return Err(Error::JobErr(format!("failed to unwrap child process ARC: {:?}", e))),
+        Err(e) => {
+            return Err(Error::JobErr(format!(
+                "failed to unwrap child process ARC: {:?}",
+                e
+            )))
+        }
     };
     let inner = match proc_lock.into_inner() {
         Ok(inner) => inner,
-        Err(e) => return Err(Error::JobErr(format!("failed to pull inner value from child process mutex: {:?}", e))),
+        Err(e) => {
+            return Err(Error::JobErr(format!(
+                "failed to pull inner value from child process mutex: {:?}",
+                e
+            )))
+        }
     };
     let output = match inner.wait_with_output() {
         Ok(out) => out,
         Err(e) => return Err(Error::JobErr(format!("child process failed: {:?}", e))),
     };
     match status.lock() {
-        Ok(mut status) => if !status.is_stopped() { *status = Status::Exited(output.status.code()) },
-        Err(e) => return Err(Error::JobErr(format!("failed to lock status mutex to update exit code: {:?}", e))),
+        Ok(mut status) => {
+            if !status.is_stopped() {
+                *status = Status::Exited(output.status.code())
+            }
+        }
+        Err(e) => {
+            return Err(Error::JobErr(format!(
+                "failed to lock status mutex to update exit code: {:?}",
+                e
+            )))
+        }
     }
     Ok(())
 }
