@@ -11,35 +11,38 @@ pub fn test_query_success() {
 
     let test_cases = [
         (
-            Command::new("sh", vec!["./tests/scripts/long_runtime.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/long_runtime.sh".into()]),
             Status::Running,
             None,
             "job is running",
             true,
         ),
         (
-            Command::new("echo", vec!["hello".into(), "world".into()]),
+            Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             Status::Exited(Some(0)),
             None,
             "job exited without error",
             false,
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/echo_and_error.sh".into()]),
+            Command::new(
+                "sh".into(),
+                vec!["./tests/scripts/echo_and_error.sh".into()],
+            ),
             Status::Exited(Some(127)),
             None,
             "job exited with status 127",
             false,
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             Status::Stopped(StopType::Kill),
             Some(false),
             "job was killed",
             false,
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             Status::Stopped(StopType::Term),
             Some(true),
             "job was terminated",
@@ -95,7 +98,7 @@ pub fn test_query_error() {
     let (job, job_handle) = app
         .worker
         .start(
-            Command::new("echo", vec!["hello".into(), "world".into()]),
+            Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             Uuid::new_v4(),
         )
         .unwrap();

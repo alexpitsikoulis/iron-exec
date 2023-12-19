@@ -10,22 +10,22 @@ pub fn test_stop_success() {
 
     let test_cases = [
         (
-            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             "kill an infinite loop",
             false,
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/long_runtime.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/long_runtime.sh".into()]),
             "kill a long running process",
             false,
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             "terminate an infinite loop",
             true,
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/long_runtime.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/long_runtime.sh".into()]),
             "terminate a long running process",
             true,
         ),
@@ -63,7 +63,7 @@ pub fn test_stop_error() {
     let (job, job_handle) = app
         .worker
         .start(
-            Command::new("echo", vec!["hello".into(), "world".into()]),
+            Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             owner_id,
         )
         .unwrap();

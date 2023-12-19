@@ -13,12 +13,12 @@ pub fn test_stream_job_succes() {
 
     let test_cases = [
         (
-            Command::new("echo", vec!["hello".into(), "world".into()]),
+            Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             false,
             "job exited successfully",
         ),
         (
-            Command::new("sh", vec!["./tests/scripts/infinite_loop.sh".into()]),
+            Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             true,
             "job loops infinitely",
         ),
@@ -81,7 +81,7 @@ pub fn test_stream_job_error() {
     let (job, job_handle) = app
         .worker
         .start(
-            Command::new("echo", vec!["hello".into(), "world".into()]),
+            Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             owner_id,
         )
         .unwrap();
