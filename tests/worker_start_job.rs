@@ -22,14 +22,14 @@ pub fn test_start_job_success() {
 
         assert_eq!(
             i + 1,
-            app.worker.jobs.len(),
+            app.worker.jobs.lock().unwrap().len(),
             "job was not pushed to worker jobs vec when {}",
             error_case,
         );
 
         assert_ne!(
             0,
-            app.worker.jobs.get(i).unwrap().pid(),
+            app.worker.jobs.lock().unwrap().get(i).unwrap().pid(),
             "pid was not assigned to job when {}",
             error_case,
         );
@@ -37,7 +37,15 @@ pub fn test_start_job_success() {
         assert_ok!(wait_handle.join(), "failed to join job thread",).unwrap();
         assert_eq!(
             *expected_status,
-            *app.worker.jobs.get(i).unwrap().status().lock().unwrap(),
+            *app.worker
+                .jobs
+                .lock()
+                .unwrap()
+                .get(i)
+                .unwrap()
+                .status()
+                .lock()
+                .unwrap(),
             "job did not exit with expected exit code when {}",
             error_case,
         );

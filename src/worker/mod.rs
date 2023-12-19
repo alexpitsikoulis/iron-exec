@@ -61,12 +61,15 @@ impl Config {
 #[derive(Clone)]
 pub struct Worker {
     cfg: Config,
-    pub jobs: Vec<Box<Job>>,
+    pub jobs: Arc<Mutex<Vec<Box<Job>>>>,
 }
 
 impl Worker {
     pub fn new(cfg: Config) -> Result<Self, Error> {
-        let worker = Worker { cfg, jobs: vec![] };
+        let worker = Worker {
+            cfg,
+            jobs: Arc::new(Mutex::new(vec![])),
+        };
         worker
             .create_log_dir()
             .map_err(|e| Error::WorkerErr(format!("failed to create log directory: {:?}", e)))?;
@@ -74,7 +77,7 @@ impl Worker {
     }
 
     pub fn start(
-        &mut self,
+        &self,
         command: Command,
         owner_id: Uuid,
     ) -> Result<(Uuid, JoinHandle<Result<(), Error>>), Error> {
@@ -116,7 +119,8 @@ impl Worker {
             ))
         })? = Status::Running;
 
-        self.jobs.push(Box::new(Job::new(
+        let mut jobs = self.jobs.lock().unwrap();
+        jobs.push(Box::new(Job::new(
             job_id,
             command,
             match child_proc.lock() {
@@ -217,10 +221,12 @@ impl Worker {
         }
     }
 
-    fn find_job(&self, job_id: Uuid, owner_id: Uuid) -> Option<&Box<Job>> {
-        self.jobs
+    fn find_job(&self, job_id: Uuid, owner_id: Uuid) -> Option<Box<Job>> {
+        let jobs = self.jobs.lock().unwrap();
+        jobs.clone()
             .iter()
             .find(|job| job.id() == job_id && job.owner_id() == owner_id)
+            .map(|job| job.clone())
     }
 
     fn create_log_dir(&self) -> Result<(), Error> {

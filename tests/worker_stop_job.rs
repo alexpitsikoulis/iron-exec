@@ -43,7 +43,7 @@ pub fn test_stop_success() {
             } else {
                 StopType::Kill
             }),
-            *app.worker.jobs[i].status().lock().unwrap(),
+            *app.worker.jobs.lock().unwrap()[i].status().lock().unwrap(),
             "failed to {}",
             error_message,
         );
