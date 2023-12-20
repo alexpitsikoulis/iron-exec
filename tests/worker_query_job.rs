@@ -53,11 +53,11 @@ pub fn test_query_success() {
     for (command, expected_status, gracefully, error_message, close_after) in test_cases {
         println!("STARTED");
         let owner_id = Uuid::new_v4();
-        let (job_id, wait_handle) = app.worker.start(command.clone(), owner_id).unwrap();
+        let job_id = app.worker.start(command.clone(), owner_id).unwrap();
 
         if let Some(gracefully) = gracefully {
             app.worker.stop(job_id, owner_id, gracefully).unwrap();
-            wait_handle.join().unwrap().unwrap();
+            assert_ok!(app.wait());
             let status = assert_ok!(app.worker.query(job_id, owner_id), "query request failed");
             assert_eq!(
                 expected_status, status,
@@ -73,9 +73,9 @@ pub fn test_query_success() {
                     error_message
                 );
                 app.worker.stop(job_id, owner_id, false).unwrap();
-                wait_handle.join().unwrap().unwrap();
+                assert_ok!(app.wait());
             } else {
-                wait_handle.join().unwrap().unwrap();
+                assert_ok!(app.wait());
                 let status = assert_ok!(app.worker.query(job_id, owner_id));
                 assert_eq!(
                     expected_status, status,
@@ -92,17 +92,17 @@ pub fn test_query_success() {
 
 #[test]
 pub fn test_query_error() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let job_id = Uuid::new_v4();
-    let (job, job_handle) = app
+    let job = app
         .worker
         .start(
             Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             Uuid::new_v4(),
         )
         .unwrap();
-    job_handle.join().unwrap().unwrap();
+    assert_ok!(app.wait());
 
     let test_cases = [
         (job_id, Uuid::new_v4(), "query a non-existent job"),

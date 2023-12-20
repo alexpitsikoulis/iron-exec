@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 #[test]
 pub fn test_start_job_success() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let test_cases = [
         (Command::new("echo".into(), vec!["hello world".into()]), Status::Exited(Some(0)), "hello world\n", "job should exit successfully and write to stdout"),
@@ -18,7 +18,7 @@ pub fn test_start_job_success() {
     for (i, (command, expected_status, expected_log_content, error_case)) in
         test_cases.iter().enumerate()
     {
-        let (job_id, wait_handle) = assert_ok!(app.worker.start(command.clone(), Uuid::new_v4(),));
+        let job_id = assert_ok!(app.worker.start(command.clone(), Uuid::new_v4(),));
 
         assert_eq!(
             i + 1,
@@ -34,7 +34,8 @@ pub fn test_start_job_success() {
             error_case,
         );
 
-        assert_ok!(wait_handle.join(), "failed to join job thread",).unwrap();
+        assert_ok!(app.wait());
+
         assert_eq!(
             *expected_status,
             *app.worker
@@ -64,23 +65,21 @@ pub fn test_start_job_success() {
 
 #[test]
 pub fn test_start_job_error() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let test_cases = [(
         Command::new("whatever-madeup-command".into(), vec![]),
+        "failed to spawn child process: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }",
         "job is started with invalid command",
     )];
 
-    for (command, error_case) in test_cases {
+    for (command, error_message, error_case) in test_cases {
         let e = assert_err!(
             app.worker.start(command, Uuid::new_v4()),
             "job did not error when {}",
             error_case
         );
 
-        assert_eq!(
-            "failed to spawn child process: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }",
-            e.as_str(),
-        )
+        assert_eq!(error_message, e.as_str(),)
     }
 }

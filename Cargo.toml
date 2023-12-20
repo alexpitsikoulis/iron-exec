@@ -17,6 +17,8 @@ async-trait = "0.1.74"
 serde = { version = "1", features = ["derive"] }
 config = "0.13.4"
 syscalls = "0.6.15"
+threadpool = "1.8.1"
+crossbeam = "0.8.2"
 
 [dev-dependencies]
 claim = "0.5.0"

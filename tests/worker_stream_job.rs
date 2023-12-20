@@ -26,7 +26,7 @@ pub fn test_stream_job_succes() {
 
     for (command, ongoing, error_case) in test_cases {
         let owner_id = Uuid::new_v4();
-        let (job_id, job_handle) = app.worker.start(command.clone(), owner_id).unwrap();
+        let job_id = app.worker.start(command.clone(), owner_id).unwrap();
         let log_filename = format!("{}_{}.log", command.name(), job_id);
         let log_filepath = format!("{}/{}", LOG_DIR, log_filename);
         let mut reader = assert_ok!(
@@ -36,7 +36,7 @@ pub fn test_stream_job_succes() {
         );
 
         if !ongoing {
-            job_handle.join().unwrap().unwrap();
+            assert_ok!(app.wait());
 
             let file_content = std::fs::read(log_filepath).unwrap();
 
@@ -66,7 +66,7 @@ pub fn test_stream_job_succes() {
             }
 
             app.worker.stop(job_id, owner_id, false).unwrap();
-            job_handle.join().unwrap().unwrap();
+            assert_ok!(app.wait());
         }
         app.log_handler.consume(log_filename);
     }
@@ -74,18 +74,18 @@ pub fn test_stream_job_succes() {
 
 #[test]
 pub fn test_stream_job_error() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let job_id = Uuid::new_v4();
     let owner_id = Uuid::new_v4();
-    let (job, job_handle) = app
+    let job = app
         .worker
         .start(
             Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             owner_id,
         )
         .unwrap();
-    job_handle.join().unwrap().unwrap();
+    assert_ok!(app.wait());
 
     let test_cases = [
         (job_id, Uuid::new_v4(), "stream a non-existent job", format!("no job with id {} found for user", job_id), false),
