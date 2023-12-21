@@ -88,7 +88,7 @@ impl Worker {
         Ok(job_id)
     }
 
-    pub fn stop(&mut self, job_id: Uuid, owner_id: Uuid, gracefully: bool) -> Result<(), Error> {
+    pub fn stop(&self, job_id: Uuid, owner_id: Uuid, gracefully: bool) -> Result<(), Error> {
         match self.find_job(job_id, owner_id) {
             Some(job) => job.stop(gracefully),
             None => Err(Error::JobStopErr(format!(
