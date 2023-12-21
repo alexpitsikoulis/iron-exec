@@ -6,7 +6,7 @@ use utils::app::TestApp;
 use uuid::Uuid;
 #[test]
 pub fn test_stop_success() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let test_cases = [
         (
@@ -56,7 +56,7 @@ pub fn test_stop_success() {
 
 #[test]
 pub fn test_stop_error() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let job_id = Uuid::new_v4();
     let owner_id = Uuid::new_v4();

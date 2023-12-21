@@ -17,7 +17,7 @@ impl TestApp {
         }
     }
 
-    pub fn wait(&self) -> Result<Uuid, Error> {
+    pub fn wait(&self) -> Result<(Uuid, bool), Error> {
         let receiver = self.worker.notify_receiver();
         match receiver.recv() {
             Ok(res) => res,

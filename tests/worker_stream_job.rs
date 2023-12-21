@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 #[test]
 pub fn test_stream_job_succes() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let test_cases = [
         (

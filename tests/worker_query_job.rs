@@ -7,12 +7,13 @@ use uuid::Uuid;
 
 #[test]
 pub fn test_query_success() {
-    let mut app = TestApp::new();
+    let app = TestApp::new();
 
     let test_cases = [
         (
             Command::new("sh".into(), vec!["./tests/scripts/long_runtime.sh".into()]),
             Status::Running,
+            None,
             None,
             "job is running",
             true,
@@ -20,6 +21,7 @@ pub fn test_query_success() {
         (
             Command::new("echo".into(), vec!["hello".into(), "world".into()]),
             Status::Exited(Some(0)),
+            Some(0),
             None,
             "job exited without error",
             false,
@@ -30,6 +32,7 @@ pub fn test_query_success() {
                 vec!["./tests/scripts/echo_and_error.sh".into()],
             ),
             Status::Exited(Some(127)),
+            Some(127),
             None,
             "job exited with status 127",
             false,
@@ -37,6 +40,7 @@ pub fn test_query_success() {
         (
             Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             Status::Stopped(StopType::Kill),
+            None,
             Some(false),
             "job was killed",
             false,
@@ -44,43 +48,67 @@ pub fn test_query_success() {
         (
             Command::new("sh".into(), vec!["./tests/scripts/infinite_loop.sh".into()]),
             Status::Stopped(StopType::Term),
+            None,
             Some(true),
             "job was terminated",
             false,
         ),
     ];
 
-    for (command, expected_status, gracefully, error_message, close_after) in test_cases {
-        println!("STARTED");
+    for (command, expected_status, expected_exit_code, gracefully, error_case, close_after) in
+        test_cases
+    {
         let owner_id = Uuid::new_v4();
         let job_id = app.worker.start(command.clone(), owner_id).unwrap();
 
         if let Some(gracefully) = gracefully {
             app.worker.stop(job_id, owner_id, gracefully).unwrap();
             assert_ok!(app.wait());
-            let status = assert_ok!(app.worker.query(job_id, owner_id), "query request failed");
+            let job_info = assert_ok!(app.worker.query(job_id, owner_id), "query request failed");
             assert_eq!(
-                expected_status, status,
+                expected_status.to_string(),
+                job_info.status(),
                 "job was not in expected state when {}",
-                error_message
+                error_case
             );
+
+            assert_eq!(
+                expected_exit_code,
+                job_info.exit_code(),
+                "job did not exit with expected exit code when {}",
+                error_case
+            )
         } else {
             if close_after {
-                let status = assert_ok!(app.worker.query(job_id, owner_id));
+                let job_info = assert_ok!(app.worker.query(job_id, owner_id));
                 assert_eq!(
-                    expected_status, status,
+                    expected_status.to_string(),
+                    job_info.status(),
                     "job was not in expected state when {}",
-                    error_message
+                    error_case,
+                );
+                assert_eq!(
+                    expected_exit_code,
+                    job_info.exit_code(),
+                    "job did not exit with expected exit code when {}",
+                    error_case
                 );
                 app.worker.stop(job_id, owner_id, false).unwrap();
                 assert_ok!(app.wait());
             } else {
                 assert_ok!(app.wait());
-                let status = assert_ok!(app.worker.query(job_id, owner_id));
+                let job_info = assert_ok!(app.worker.query(job_id, owner_id));
                 assert_eq!(
-                    expected_status, status,
+                    expected_status.to_string(),
+                    job_info.status(),
                     "job was not in expected state when {}",
-                    error_message
+                    error_case
+                );
+                assert_eq!(
+                    expected_exit_code,
+                    job_info.exit_code(),
+                    "job did not exit with expected exit code when {}",
+                    error_case
                 );
             }
         }

@@ -13,6 +13,22 @@ impl Status {
             _ => false,
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::UnknownState => "Unknown state",
+            Self::Running => "Running",
+            Self::Exited(_) => "Exited",
+            Self::Stopped(stop_type) => match stop_type {
+                StopType::Term => "terminated",
+                StopType::Kill => "Killed",
+            },
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        String::from(self.as_str())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

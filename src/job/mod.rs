@@ -1,6 +1,7 @@
 mod command;
 mod status;
 pub use command::*;
+use crossbeam::channel::Sender;
 pub use status::*;
 use syscalls::{syscall, Sysno};
 
@@ -12,6 +13,32 @@ use std::{
     sync::{Arc, Mutex},
 };
 use uuid::Uuid;
+
+#[derive(Debug)]
+pub struct JobInfo {
+    status: String,
+    pid: u32,
+    exit_code: Option<i32>,
+    command: Command,
+}
+
+impl JobInfo {
+    pub fn status(&self) -> String {
+        self.status.clone()
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    pub fn exit_code(&self) -> Option<i32> {
+        self.exit_code
+    }
+
+    pub fn command(&self) -> Command {
+        self.command.clone()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Job {
@@ -101,7 +128,11 @@ impl Job {
         ))
     }
 
-    pub fn stop(&self, gracefully: bool) -> Result<(), crate::worker::Error> {
+    pub fn stop(
+        &self,
+        gracefully: bool,
+        sender: Sender<Result<(Uuid, bool), crate::worker::Error>>,
+    ) -> Result<(), crate::worker::Error> {
         let stop_type = match gracefully {
             true => StopType::Term,
             false => StopType::Kill,
@@ -115,15 +146,47 @@ impl Job {
                             self.id, e
                         ))
                     })? = Status::Stopped(stop_type);
+                    if let Err(e) = sender.send(Ok((self.id, true))) {
+                        panic!("failed to send stop result: {:?}", e);
+                    }
                     Ok(())
                 }
-                Err(e) => Err(crate::worker::Error::JobStopErr(format!(
-                    "failed to send SIG{} to job: {:?}",
-                    stop_type.as_str().to_uppercase(),
-                    e
-                ))),
+                Err(e) => {
+                    if let Err(e) = sender.send(Err(crate::worker::Error::JobStopErr(
+                        String::from("failed to stop job"),
+                    ))) {
+                        panic!("failed to send stop error: {:?}", e);
+                    };
+                    Err(crate::worker::Error::JobStopErr(format!(
+                        "failed to send SIG{} to job: {:?}",
+                        stop_type.as_str().to_uppercase(),
+                        e
+                    )))
+                }
             }
         }
+    }
+
+    pub fn query(&self) -> Result<JobInfo, crate::worker::Error> {
+        let status = match self.status.lock() {
+            Ok(status) => status,
+            Err(e) => {
+                return Err(crate::worker::Error::JobQueryErr(format!(
+                    "failed to lock status mutex for query: {:?}",
+                    e
+                )))
+            }
+        };
+        let exit_code = match *status {
+            Status::Exited(status_code) => status_code,
+            _ => None,
+        };
+        Ok(JobInfo {
+            pid: self.pid,
+            command: self.command.clone(),
+            status: status.to_string(),
+            exit_code,
+        })
     }
 
     pub fn stream(&self, log_dir: &str) -> Result<std::io::BufReader<File>, crate::worker::Error> {
@@ -141,7 +204,7 @@ impl Job {
         }
     }
 
-    pub fn wait(&self, proc: std::process::Child) -> Result<Uuid, crate::worker::Error> {
+    pub fn wait(&self, proc: std::process::Child) -> Result<(Uuid, bool), crate::worker::Error> {
         let output = match proc.wait_with_output() {
             Ok(out) => out,
             Err(e) => {
@@ -164,6 +227,6 @@ impl Job {
                 ))
             }
         }
-        Ok(self.id)
+        Ok((self.id, false))
     }
 }
