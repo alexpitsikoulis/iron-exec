@@ -15,15 +15,15 @@ Upon requests to the API to stop a process, the library will locate the process 
 // Command is the body of a request to start a process as received from the API or CLI
 pub struct Command {
     // Base command name
-    name: &'static str,
+    name: String,
     // List of arguments to the command
-    args: Vec<&'static str>,
+    args: Vec<String>,
 }
 
 // Job represents the process and its associated status data
 pub struct Job {
     // Unique ID
-    id: uuid::Uuid::uuid::Uuid,
+    id: uuid::Uuid,
     // Command to be executed
     cmd: Command,
     // System pid of the running process
@@ -31,7 +31,19 @@ pub struct Job {
     // Status of the job.
     status: Arc<Mutex<Status>>,
     // ID of the client which owns this job
-    owner_id: uuid::Uuid::uuid::Uuid,
+    owner_id: uuid::Uuid,
+}
+
+// JobInfo is the struct returned from the Query method
+pub struct JobInfo {
+    // Unique ID
+    id: uuid::Uuid,
+    // Command to be executed
+    cmd: Command,
+    // System pid of the running process
+    pid: u32,
+    // Status of the job.
+    owner_id: uuid::Uuid,
 }
 
 // Status of the process
@@ -73,7 +85,7 @@ impl Worker {
     //    - job_id: Job identifier (Job.id)
     //    - owner_id: User identifier (Job.owner_id)
     // Returns status of specified job and error if an error was encountered
-    fn query(&self, job_id: uuid::Uuid, owner_id: uuid::Uuid, gracefully: bool) -> Result<Status, Error>;
+    fn query(&self, job_id: uuid::Uuid, owner_id: uuid::Uuid, gracefully: bool) -> Result<JobInfo, Error>;
     // Streams the job output
     //    - job_id: Job identifier (Job.id)
     //    - owner_id: User identifier (Job.owner_id)
